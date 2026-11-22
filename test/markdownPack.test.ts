@@ -653,7 +653,8 @@ test("compact markdown preserves first-level ordered list indentation inside pro
 
   const output = toCompactMarkdown(input);
 
-  assert.strictEqual(output, "<prompt>\n1. parent\n  1. child from six spaces\n2. next parent\n</prompt>\n");
+  // Children of "1. " need 3 spaces to stay nested (CommonMark content column).
+  assert.strictEqual(output, "<prompt>\n1. parent\n   1. child from six spaces\n2. next parent\n</prompt>\n");
 });
 
 test("compact markdown preserves first-level unordered list indentation inside protected blocks", () => {
@@ -782,4 +783,154 @@ test("compact markdown forces blank before critical headings", () => {
 
   assert.ok(output.includes("Normal text\n\n## Hard Rules"));
   assert.ok(output.includes("Content\n\n## Output Template"));
+});
+
+// --- Regression tests: compaction must not change document structure or code content ---
+
+test("compact markdown keeps code fences inside protected blocks verbatim", () => {
+  const input = "<prompt>\n```py\ndef f(a, b):\n\n    return a - b\n```\nText, here\n</prompt>\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "<prompt>\n```py\ndef f(a, b):\n\n    return a - b\n```\nText,here\n</prompt>\n");
+});
+
+test("compact markdown does not treat a protected close tag inside a fence as the block end", () => {
+  const input = "<prompt>\n```xml\n</prompt>\na, b\n```\n</prompt>\nafter, text\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "<prompt>\n```xml\n</prompt>\na, b\n```\n</prompt>\nafter,text\n");
+});
+
+test("compact markdown preserves indented code blocks", () => {
+  const input = "Para, text\n\n    code, here  with  spaces\n\n    x - 1\n\nAfter, text\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "Para,text\n\n    code, here  with  spaces\n\n    x - 1\n\nAfter,text\n");
+});
+
+test("compact markdown preserves tab-indented code blocks", () => {
+  const input = "\tconst a = 1, b = 2;\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "\tconst a = 1, b = 2;\n");
+});
+
+test("compact markdown treats indented lines after a paragraph as continuation, not code", () => {
+  const input = "Para line\n    continued, line\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "Para line\ncontinued,line\n");
+});
+
+test("compact markdown matches fence character and length", () => {
+  const input = "````md\n```js\nconst a = 1, b = 2;\n```\n````\nafter, text\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "````md\n```js\nconst a = 1, b = 2;\n```\n````\nafter,text\n");
+});
+
+test("compact markdown does not close a tilde fence with backticks", () => {
+  const input = "~~~\ncode\n```\nstill code, yes\n~~~\nout, side\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "~~~\ncode\n```\nstill code, yes\n~~~\nout,side\n");
+});
+
+test("compact markdown keeps unclosed markdown fence content", () => {
+  const input = "```md\n# Title\nsome, text\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "```md\n# Title\n\nsome,text\n");
+});
+
+test("compact markdown does not insert blanks inside code that ends with a list-like line", () => {
+  const input = "```text\n- item\n```\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "```text\n- item\n```\n");
+});
+
+test("thematic breaks inside code fences are preserved in both modes", () => {
+  const input = "```yaml\n---\n# comment\nkey: v\n```\n";
+
+  assert.strictEqual(toCompactMarkdown(input), input);
+  assert.strictEqual(toHumanMarkdown(input), input);
+});
+
+test("human markdown matches fence character and length", () => {
+  const input = "````md\n```\n|A|B|\n```\n````\n";
+
+  assert.strictEqual(toHumanMarkdown(input), input);
+});
+
+test("compact markdown keeps list continuation paragraphs inside the item", () => {
+  const input = "- item\n\n  paragraph, inside item\n- next\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "- item\n\n  paragraph,inside item\n- next\n");
+});
+
+test("compact markdown keeps ordered list continuation aligned and without extra blank", () => {
+  const input = "1. a\n   continued line\n2. b\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "1. a\n   continued line\n2. b\n");
+});
+
+test("compact markdown ends the list after a blank line and unindented paragraph", () => {
+  const input = "- item\n\n  inside\n\nOutside\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "- item\n\n  inside\n\nOutside\n");
+});
+
+test("compact markdown nests children of ordered items at the content column", () => {
+  const input = "1. step\n   - child a\n   - child b\n10. tenth\n    - child\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "1. step\n   - child a\n   - child b\n10. tenth\n    - child\n");
+});
+
+test("compact markdown keeps one-space sibling items at the same level", () => {
+  const input = "- a\n - b\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "- a\n- b\n");
+});
+
+test("compact markdown keeps html comments inside inline code", () => {
+  const input = "Use `<!-- x -->` literally <!-- remove -->\n";
+  const output = toCompactMarkdown(input);
+
+  assert.strictEqual(output, "Use `<!-- x -->` literally\n");
+});
+
+test("compact markdown is idempotent", () => {
+  const input = [
+    "# Title",
+    "",
+    "Intro, text  with   spaces.",
+    "",
+    "1. step",
+    "   - child",
+    "",
+    "   continuation",
+    "2. next",
+    "",
+    "    indented code",
+    "",
+    "<prompt>",
+    "```py",
+    "x = a - b",
+    "```",
+    "</prompt>",
+    "",
+    "| A | B |",
+    "|---|---|",
+    "| 1 | 2 |",
+    "",
+  ].join("\n");
+  const once = toCompactMarkdown(input);
+
+  assert.strictEqual(toCompactMarkdown(once), once);
 });

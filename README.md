@@ -110,10 +110,13 @@ Applied outside real code fences; inline code spans are always protected:
 ### Structure
 
 - Preserves trailing spaces at end of lines (removed everywhere including inside code fences, except double-space hard line breaks inside `md`/`markdown` fences)
-- Preserves nested lists with 2 spaces per level
+- Normalizes nested list indentation to the parent's content column (2 spaces under `- `, 3 under `1. `, 4 under `10. `), so nesting stays valid CommonMark
+- Keeps indented continuation paragraphs inside their list item
+- Preserves indented code blocks (4+ spaces or a tab after a blank line) verbatim, except inside XML-like prompt tags where indentation is treated as visual
+- Matches code fences by character and length (a ```` ``` ```` line does not close a `~~~` or ```` ```` ```` fence)
 - Preserves one blank line after the last item of a list before the next block
 - Normalizes unordered bullets from `*` and `+` to `-`; does not normalize ordered list numbers
-- Removes inline and multiline HTML comments
+- Removes inline and multiline HTML comments (comments inside inline code spans are kept)
 - Compacts table cells and separators; removes final pipe when last cell is not empty
 - Applies full Markdown compaction inside `md` and `markdown` code fences
 
@@ -125,10 +128,11 @@ XML-like blocks receive lighter compaction to preserve intent:
 - Conditionally protected when a matching close tag exists (case-insensitive): `<task>`, `<instructions>`, `<context>`, `<files>`, `<rules>`, `<example>`, `<output>`, `<acceptance_criteria>`, `<acceptance-criteria>`
 
 Inside protected blocks:
+- Code fences are copied verbatim (only trailing whitespace is trimmed)
 - All internal blank lines removed except one blank before headings and after H1/H2 headings
 - No blank forced if heading is the first line after the open tag or the last line before the close tag
 - Uniform base indentation is removed while preserving relative indentation
-- Tables compacted; list indentation normalized (first-level preserved, child = parent + 2 spaces)
+- Tables compacted; list indentation normalized (first-level preserved, children aligned to the parent's content column)
 - Commas, word connectors, colons, links, and checkbox brackets compacted (same rules as outside)
 - Trailing spaces trimmed
 
