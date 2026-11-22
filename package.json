@@ -2,7 +2,7 @@
   "name": "md-prompt-pack",
   "displayName": "Markdown Prompt Pack",
   "description": "Generate human and compact Markdown versions for AI prompts and documentation.",
-  "version": "0.0.19",
+  "version": "0.1.0",
   "publisher": "oscarabal",
   "icon": "assets/icon.png",
   "license": "MIT",
