@@ -1,0 +1,133 @@
+{
+  "name": "md-prompt-pack",
+  "displayName": "Markdown Prompt Pack",
+  "description": "Generate human and compact Markdown versions for AI prompts and documentation.",
+  "version": "0.0.19",
+  "publisher": "oscarabal",
+  "icon": "assets/icon.png",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "markdown",
+    "prompt",
+    "ai",
+    "compact",
+    "documentation"
+  ],
+  "activationEvents": [
+    "onCommand:mdPromptPack.generateHuman",
+    "onCommand:mdPromptPack.generateCompact",
+    "onCommand:mdPromptPack.generateBoth",
+    "onCommand:mdPromptPack.generateFolderCompact"
+  ],
+  "main": "./out/src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "mdPromptPack.generateHuman",
+        "title": "MD Pack: Generate Human Version"
+      },
+      {
+        "command": "mdPromptPack.generateCompact",
+        "title": "MD Pack: Generate Compact Version"
+      },
+      {
+        "command": "mdPromptPack.generateBoth",
+        "title": "MD Pack: Generate Human + Compact Versions"
+      },
+      {
+        "command": "mdPromptPack.generateFolderCompact",
+        "title": "MD Pack: Generate Compact Versions for Folder"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "mdPromptPack.generateHuman",
+          "when": "resourceExtname == .md && !explorerResourceIsFolder",
+          "group": "navigation@50"
+        },
+        {
+          "command": "mdPromptPack.generateCompact",
+          "when": "resourceExtname == .md && !explorerResourceIsFolder",
+          "group": "navigation@51"
+        },
+        {
+          "command": "mdPromptPack.generateBoth",
+          "when": "resourceExtname == .md && !explorerResourceIsFolder",
+          "group": "navigation@52"
+        },
+        {
+          "command": "mdPromptPack.generateFolderCompact",
+          "when": "explorerResourceIsFolder",
+          "group": "navigation@53"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "mdPromptPack.generateHuman",
+          "when": "resourceExtname == .md",
+          "group": "navigation@50"
+        },
+        {
+          "command": "mdPromptPack.generateCompact",
+          "when": "resourceExtname == .md",
+          "group": "navigation@51"
+        },
+        {
+          "command": "mdPromptPack.generateBoth",
+          "when": "resourceExtname == .md",
+          "group": "navigation@52"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Markdown Prompt Pack",
+      "properties": {
+        "mdPromptPack.outputMode": {
+          "type": "string",
+          "enum": [
+            "sibling",
+            "generatedFolder"
+          ],
+          "default": "sibling",
+          "description": "Where generated markdown files are written."
+        },
+        "mdPromptPack.generatedFolderName": {
+          "type": "string",
+          "default": ".mdpack",
+          "description": "Folder name used when outputMode is generatedFolder."
+        },
+        "mdPromptPack.overwrite": {
+          "type": "boolean",
+          "default": true,
+          "description": "Overwrite existing generated files. Compact outputs are always overwritten."
+        },
+        "mdPromptPack.excludeGeneratedFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Skip files ending with .human.md or .compact.md when processing folders."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test:unit": "npm run compile && node ./out/test/markdownPack.test.js",
+    "package": "node ./scripts/bump-version.js && vsce package",
+    "deploy": "npm run package && pwsh -Command \"code --install-extension (Get-ChildItem *.vsix | Sort-Object LastWriteTime -Descending | Select-Object -First 1).Name --force\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^2.15.0",
+    "typescript": "^5.4.0"
+  }
+}
