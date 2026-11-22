@@ -60,6 +60,29 @@ instructions/.mdpack/spec.compact.md
 
 Compact outputs overwrite existing `*.compact.md` files automatically. The `mdPromptPack.overwrite` setting only controls whether non-compact generated files such as `*.human.md` can be overwritten.
 
+### Compact safety check and token stats
+
+After generating a compact file, the extension checks that compaction did not change content that must survive exactly:
+
+- Code blocks (compared without trailing whitespace and uniform base indentation; `md` fences are only counted, since their content is compacted)
+- Heading levels and text (ignoring whitespace)
+- Inline code spans (outside tables)
+- Link URLs and bare URLs
+- Number of list items
+
+If something changed, a warning is shown and the details are written to the **MD Prompt Pack** output channel.
+
+The completion message also shows the approximate token count before and after compaction, for example `≈379 → ≈333 tokens (−12.1%)`. It is a dependency-free BPE-style estimate meant for comparing versions, not an exact tokenizer count.
+
+```json
+{
+  "mdPromptPack.compactValidation": "warn",
+  "mdPromptPack.showTokenStats": true
+}
+```
+
+`compactValidation` accepts `warn` (default: write and warn), `block` (do not write the compact file) or `off`.
+
 ## Human Mode
 
 Human mode improves readability of any Markdown file, including previously generated `*.compact.md` files.
@@ -93,9 +116,19 @@ Transformations applied (YAML frontmatter is preserved verbatim; code fence cont
 - Forces a blank line before critical section headings: `Hard Rules`, `Required Inputs`, `Output Template`, `Critical Rules`, `Important`
 - Removes tabs; normalizes multiple spaces to single spaces
 
-### Punctuation compaction
+### Punctuation compaction (optional)
 
-Applied outside real code fences; inline code spans are always protected:
+Disabled by default. Enable it with:
+
+```json
+{
+  "mdPromptPack.compactPunctuation": true
+}
+```
+
+These rules save characters but rarely tokens (BPE tokenizers usually merge a space with the next word), and they can change meaning: `x - 1` → `x-1`, `key: value` → `key:value` (no longer valid YAML), and `- [ ]` → `- []` (no longer a GFM task list item). Link spacing (`[ text ]( url )` → `[text](url)`) is always compacted, since it only removes whitespace.
+
+When enabled, applied outside real code fences; inline code spans and bare URLs are always protected:
 
 - Removes spaces after commas: `a, b` → `a,b`
 - Removes spaces after semicolons: `a; b` → `a;b`
@@ -104,16 +137,20 @@ Applied outside real code fences; inline code spans are always protected:
 - Does not compact connectors preceded by `*` (bold/italic markers): `**LCP** — render` is left unchanged
 - Does not compact list marker dashes (no word before the `-`)
 - Removes space after `:` when followed by a word, `{`, or `"`: `Default: all` → `Default:all`, `key: "value"` → `key:"value"`
-- Compacts Markdown links by removing extra spaces inside brackets and parentheses
-- Collapses empty checkbox brackets: `[ ]` → `[]`; normalizes checked boxes to `[x]`
+- Collapses empty checkbox brackets: `[ ]` → `[]`
 
 ### Structure
 
+- Compacts Markdown links by removing extra spaces inside brackets and parentheses
+
 - Preserves trailing spaces at end of lines (removed everywhere including inside code fences, except double-space hard line breaks inside `md`/`markdown` fences)
-- Preserves nested lists with 2 spaces per level
+- Normalizes nested list indentation to the parent's content column (2 spaces under `- `, 3 under `1. `, 4 under `10. `), so nesting stays valid CommonMark
+- Keeps indented continuation paragraphs inside their list item
+- Preserves indented code blocks (4+ spaces or a tab after a blank line) verbatim, except inside XML-like prompt tags where indentation is treated as visual
+- Matches code fences by character and length (a ```` ``` ```` line does not close a `~~~` or ```` ```` ```` fence)
 - Preserves one blank line after the last item of a list before the next block
 - Normalizes unordered bullets from `*` and `+` to `-`; does not normalize ordered list numbers
-- Removes inline and multiline HTML comments
+- Removes inline and multiline HTML comments (comments inside inline code spans are kept)
 - Compacts table cells and separators; removes final pipe when last cell is not empty
 - Applies full Markdown compaction inside `md` and `markdown` code fences
 
@@ -125,11 +162,12 @@ XML-like blocks receive lighter compaction to preserve intent:
 - Conditionally protected when a matching close tag exists (case-insensitive): `<task>`, `<instructions>`, `<context>`, `<files>`, `<rules>`, `<example>`, `<output>`, `<acceptance_criteria>`, `<acceptance-criteria>`
 
 Inside protected blocks:
+- Code fences are copied verbatim (only trailing whitespace is trimmed)
 - All internal blank lines removed except one blank before headings and after H1/H2 headings
 - No blank forced if heading is the first line after the open tag or the last line before the close tag
 - Uniform base indentation is removed while preserving relative indentation
-- Tables compacted; list indentation normalized (first-level preserved, child = parent + 2 spaces)
-- Commas, word connectors, colons, links, and checkbox brackets compacted (same rules as outside)
+- Tables compacted; list indentation normalized (first-level preserved, children aligned to the parent's content column)
+- Links compacted; with `compactPunctuation` enabled, commas, word connectors and checkbox brackets too (same rules as outside)
 - Trailing spaces trimmed
 
 ### Example
@@ -157,14 +195,13 @@ Becomes:
 
 Text with extra spacing.
 
-|Command|Description|
-|--|--|
-|Run|Execute|
+|Command|Description
+|--|--
+|Run|Execute
 
 - item
   - child
-
-- [] pending task
+- [ ] pending task
 - [x] done task
 ```
 

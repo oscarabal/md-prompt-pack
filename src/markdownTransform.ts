@@ -5,7 +5,7 @@ export function toHumanMarkdown(markdown: string): string {
   const result: string[] = [];
   let tableBuffer: string[] = [];
   let blankCount = 0;
-  let inFence = false;
+  let fence: FenceInfo | null = null;
   let inFrontmatter = false;
 
   const flushTable = (): void => {
@@ -36,15 +36,16 @@ export function toHumanMarkdown(markdown: string): string {
       continue;
     }
 
-    if (isFenceLine(line)) {
+    const humanFence = fenceTransition(line, fence);
+    if (humanFence.delimiter) {
       flushTable();
-      inFence = !inFence;
+      fence = humanFence.open;
       result.push(line.trimEnd());
       blankCount = 0;
       continue;
     }
 
-    if (inFence) {
+    if (fence !== null) {
       result.push(line);
       continue;
     }
@@ -77,21 +78,47 @@ export function toHumanMarkdown(markdown: string): string {
   return ensureTrailingNewline(insertSemanticBlanks(result).join("\n"));
 }
 
-export function toCompactMarkdown(markdown: string): string {
+export interface CompactOptions {
+  /**
+   * Aggressive punctuation rules: remove spaces after `,` `;` `:`, around `/` and around word
+   * connectors (`-` `+` `<` `>` `→` `—`), and collapse `[ ]` to `[]`. They save characters but
+   * rarely tokens, and can change meaning (`x - 1` → `x-1`, `key: value` → `key:value`).
+   * Default: false.
+   */
+  punctuation?: boolean;
+}
+
+let activeOptions: Required<CompactOptions> = { punctuation: false };
+
+export function toCompactMarkdown(markdown: string, options: CompactOptions = {}): string {
+  const previousOptions = activeOptions;
+  activeOptions = { punctuation: options.punctuation ?? false };
+  try {
+    return compactMarkdownDocument(markdown);
+  } finally {
+    activeOptions = previousOptions;
+  }
+}
+
+function compactMarkdownDocument(markdown: string): string {
   const normalized = normalizeLineEndings(markdown);
   const lines = removeThematicBreaksBeforeHeadings(normalized.split("\n"));
 
   const result: string[] = [];
-  const listIndentStack: number[] = [];
-  const protectedListState: ProtectedListState = { indentStack: [], baseIndent: 0 };
+  const listContext: ListContext = [];
+  const protectedListContext: ListContext = [];
   const htmlCommentState = { inComment: false };
   let blankPending = false;
-  let inFence = false;
+  let fence: FenceInfo | null = null;
   let fenceLanguage = "";
+  let protectedFence: FenceInfo | null = null;
   let inFrontmatter = false;
   let inProtectedBlock = false;
   let protectedBlockTag = "";
   let protectedBlockStartIndex = -1;
+  // Depth of XML-like prompt tags (<TASK>, <context>, ...) currently open. Prose inside them is
+  // often indented for readability, so indented-code detection is disabled there.
+  let xmlTagDepth = 0;
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
@@ -110,9 +137,9 @@ export function toCompactMarkdown(markdown: string): string {
       continue;
     }
 
-    const protectedTag = getProtectedBlockOpenTag(line, lines, index);
-    if (!inFence && !inProtectedBlock && protectedTag !== "") {
-      listIndentStack.length = 0;
+    const protectedTag = fence === null && !inProtectedBlock ? getProtectedBlockOpenTag(line, lines, index) : "";
+    if (protectedTag !== "") {
+      listContext.length = 0;
       if (result.length > 0 && (blankPending || isListItemLine(result[result.length - 1]))) {
         result.push("");
       }
@@ -120,23 +147,35 @@ export function toCompactMarkdown(markdown: string): string {
       inProtectedBlock = true;
       protectedBlockTag = protectedTag;
       protectedBlockStartIndex = result.length;
-      resetProtectedListState(protectedListState);
+      protectedListContext.length = 0;
+      protectedFence = null;
       result.push(line.trimEnd());
       continue;
     }
 
     if (inProtectedBlock) {
+      // Code fences inside protected blocks are copied verbatim (only trailing whitespace is trimmed).
+      const protectedFenceStep = fenceTransition(line, protectedFence);
+      if (protectedFenceStep.delimiter || protectedFence !== null) {
+        if (protectedFenceStep.delimiter) {
+          protectedListContext.length = 0;
+        }
+        protectedFence = protectedFenceStep.open;
+        result.push(line.trimEnd());
+        continue;
+      }
+
       if (isProtectedBlockClose(line, protectedBlockTag)) {
         stripUniformProtectedIndent(result, protectedBlockStartIndex + 1);
         inProtectedBlock = false;
         protectedBlockTag = "";
         protectedBlockStartIndex = -1;
-        resetProtectedListState(protectedListState);
+        protectedListContext.length = 0;
         result.push(line.trimEnd());
         continue;
       }
 
-      const cleaned = compactProtectedBlockLine(line, protectedListState);
+      const cleaned = compactProtectedBlockLine(line, protectedListContext);
       if (cleaned === "") {
         continue;
       }
@@ -152,50 +191,92 @@ export function toCompactMarkdown(markdown: string): string {
       continue;
     }
 
-    if (isFenceLine(line)) {
-      listIndentStack.length = 0;
+    if (fence !== null) {
+      if (isFenceClose(line, fence)) {
+        fence = null;
+        fenceLanguage = "";
+        result.push(line.trimEnd());
+        continue;
+      }
+
+      result.push(compactFenceLine(line, fenceLanguage));
+      continue;
+    }
+
+    const fenceOpen = htmlCommentState.inComment ? null : parseFenceOpen(line);
+    if (fenceOpen !== null) {
+      listContext.length = 0;
       if (result.length > 0 && (blankPending || isListItemLine(result[result.length - 1]))) {
         result.push("");
       }
 
       blankPending = false;
-      fenceLanguage = inFence ? "" : getFenceLanguage(line);
+      fenceLanguage = getFenceLanguage(line);
+      result.push(line.trimEnd());
 
-      if (!inFence && isMarkdownFenceLanguage(fenceLanguage)) {
+      if (isMarkdownFenceLanguage(fenceLanguage)) {
         const fenceIndent = line.trimEnd().slice(0, line.trimEnd().length - line.trim().length);
         const fenceLines: string[] = [];
-
-        result.push(line.trimEnd());
-        inFence = true;
+        let closingLine: string | null = null;
 
         for (index++; index < lines.length; index++) {
-          if (isFenceLine(lines[index])) {
-            const compacted = compactMarkdownFenceBlock(fenceLines, fenceIndent);
-            result.push(...compacted);
-            result.push(lines[index].trimEnd());
-            inFence = false;
-            fenceLanguage = "";
+          if (isFenceClose(lines[index], fenceOpen)) {
+            closingLine = lines[index].trimEnd();
             break;
           }
 
           fenceLines.push(lines[index]);
         }
 
+        result.push(...compactMarkdownFenceBlock(fenceLines, fenceIndent));
+        if (closingLine !== null) {
+          result.push(closingLine);
+        }
+        fenceLanguage = "";
         continue;
       }
 
-      inFence = !inFence;
-      result.push(line.trimEnd());
+      fence = fenceOpen;
       continue;
     }
 
-    if (inFence) {
-      result.push(compactFenceLine(line, fenceLanguage));
+    if (isXmlOpenTagLine(line)) {
+      xmlTagDepth++;
+    } else if (isXmlCloseTagLine(line)) {
+      xmlTagDepth = Math.max(0, xmlTagDepth - 1);
+    }
+
+    if (
+      !htmlCommentState.inComment &&
+      xmlTagDepth === 0 &&
+      listContext.length === 0 &&
+      isIndentedCodeLine(line) &&
+      (result.length === 0 || blankPending || isHeadingLine(result[result.length - 1]))
+    ) {
+      // Indented code block (4+ columns after a blank line): copy verbatim.
+      if (result.length > 0) {
+        result.push("");
+      }
+
+      let end = index;
+      for (let next = index + 1; next < lines.length; next++) {
+        if (isIndentedCodeLine(lines[next])) {
+          end = next;
+        } else if (lines[next].trim() !== "") {
+          break;
+        }
+      }
+
+      for (; index <= end; index++) {
+        result.push(lines[index].trimEnd());
+      }
+      index = end;
+      blankPending = false;
       continue;
     }
 
     const withoutComment = removeHtmlComments(line, htmlCommentState);
-    const cleaned = compactWhitespace(withoutComment, listIndentStack);
+    const cleaned = compactWhitespace(withoutComment, listContext);
 
     if (cleaned === "") {
       blankPending = true;
@@ -213,7 +294,7 @@ export function toCompactMarkdown(markdown: string): string {
   return ensureTrailingNewline(result.join("\n"));
 }
 
-function normalizeLineEndings(value: string): string {
+export function normalizeLineEndings(value: string): string {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
@@ -224,9 +305,17 @@ function ensureTrailingNewline(value: string): string {
 function removeThematicBreaksBeforeHeadings(lines: string[]): string[] {
   const frontmatterBreaks = getFrontmatterBreakIndexes(lines);
   const result: string[] = [];
+  let fence: FenceInfo | null = null;
 
   for (let index = 0; index < lines.length; index++) {
     if (frontmatterBreaks.has(index)) {
+      result.push(lines[index]);
+      continue;
+    }
+
+    const step = fenceTransition(lines[index], fence);
+    if (step.delimiter || fence !== null) {
+      fence = step.open;
       result.push(lines[index]);
       continue;
     }
@@ -271,7 +360,60 @@ function isFenceLine(line: string): boolean {
   return trimmed.startsWith("```") || trimmed.startsWith("~~~");
 }
 
-function removeHtmlComments(line: string, state: { inComment: boolean }): string {
+export interface FenceInfo {
+  char: string;
+  length: number;
+}
+
+/** Parses an opening code fence. A closing fence must use the same character and be at least as long. */
+export function parseFenceOpen(line: string): FenceInfo | null {
+  const match = line.trim().match(/^(`{3,}|~{3,})(.*)$/);
+  if (match === null) {
+    return null;
+  }
+
+  // Backtick fences cannot have backticks in their info string (CommonMark).
+  if (match[1][0] === "`" && match[2].includes("`")) {
+    return null;
+  }
+
+  return { char: match[1][0], length: match[1].length };
+}
+
+export function isFenceClose(line: string, fence: FenceInfo): boolean {
+  const match = line.trim().match(/^(`{3,}|~{3,})$/);
+  return match !== null && match[1][0] === fence.char && match[1].length >= fence.length;
+}
+
+/** Advances fence state for one line. `delimiter` is true when the line opens or closes a fence. */
+function fenceTransition(line: string, open: FenceInfo | null): { open: FenceInfo | null; delimiter: boolean } {
+  if (open !== null) {
+    return isFenceClose(line, open) ? { open: null, delimiter: true } : { open, delimiter: false };
+  }
+
+  const opened = parseFenceOpen(line);
+  return opened === null ? { open: null, delimiter: false } : { open: opened, delimiter: true };
+}
+
+function leadingColumns(line: string): number {
+  let columns = 0;
+  for (const char of line) {
+    if (char === " ") {
+      columns++;
+    } else if (char === "\t") {
+      columns += 4 - (columns % 4);
+    } else {
+      break;
+    }
+  }
+  return columns;
+}
+
+function isIndentedCodeLine(line: string): boolean {
+  return line.trim() !== "" && leadingColumns(line) >= 4;
+}
+
+export function removeHtmlComments(line: string, state: { inComment: boolean }): string {
   let output = "";
   let remaining = line;
 
@@ -287,7 +429,7 @@ function removeHtmlComments(line: string, state: { inComment: boolean }): string
       continue;
     }
 
-    const commentStart = remaining.indexOf("<!--");
+    const commentStart = indexOfOutsideInlineCode(remaining, "<!--");
     if (commentStart < 0) {
       return output + remaining;
     }
@@ -300,7 +442,30 @@ function removeHtmlComments(line: string, state: { inComment: boolean }): string
   return output;
 }
 
-function compactWhitespace(line: string, listIndentStack: number[]): string {
+function indexOfOutsideInlineCode(text: string, needle: string): number {
+  let index = 0;
+  while (index < text.length) {
+    if (text[index] === "`") {
+      const run = text.slice(index).match(/^`+/)![0];
+      const closing = text.indexOf(run, index + run.length);
+      if (closing >= 0) {
+        index = closing + run.length;
+        continue;
+      }
+      index += run.length;
+      continue;
+    }
+
+    if (text.startsWith(needle, index)) {
+      return index;
+    }
+    index++;
+  }
+
+  return -1;
+}
+
+function compactWhitespace(line: string, listContext: ListContext): string {
   const withoutTabs = line.replace(/\t/g, "  ").trimEnd();
   const content = withoutTabs.trimStart();
 
@@ -309,30 +474,112 @@ function compactWhitespace(line: string, listIndentStack: number[]): string {
   }
 
   if (content.startsWith("|")) {
-    listIndentStack.length = 0;
+    listContext.length = 0;
     return compactTableLine(content);
   }
 
-  if (/^([-*+]|\d+\.)\s+/.test(content)) {
-    const rawIndent = withoutTabs.length - content.length;
-    const normalizedIndent = " ".repeat(getListLevel(rawIndent, listIndentStack) * 2);
-    return `${normalizedIndent}${compactListItem(content)}`;
+  const rawIndent = withoutTabs.length - content.length;
+
+  if (isAnyThematicBreak(content)) {
+    listContext.length = 0;
+    return content;
+  }
+
+  if (LIST_ITEM_PATTERN.test(content)) {
+    const outIndent = pushListItem(listContext, rawIndent, content, 0);
+    return `${" ".repeat(outIndent)}${compactListItem(content)}`;
   }
 
   if (content.startsWith(">")) {
-    listIndentStack.length = 0;
+    listContext.length = 0;
     return compactBlockquote(content);
   }
 
-  listIndentStack.length = 0;
-  return compactInlinePunctuation(content.replace(/ {2,}/g, " "));
+  // Indented continuation of a list item: keep it aligned with the item content.
+  const continuationIndent = getListContinuationIndent(listContext, rawIndent);
+  return `${" ".repeat(continuationIndent)}${compactInlinePunctuation(collapseSpaces(content))}`;
+}
+
+const LIST_ITEM_PATTERN = /^([-*+]|\d{1,9}[.)])(\s+)/;
+
+/** Thematic breaks such as `***`, `* * *`, `- - -` or `___` (kept as written). */
+function isAnyThematicBreak(content: string): boolean {
+  return /^([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(content);
+}
+
+/** Collapses repeated spaces outside inline code spans. */
+function collapseSpaces(text: string): string {
+  return processOutsideInlineCode(text, (segment) => segment.replace(/ {2,}/g, " "));
+}
+
+// A bare URL, plus the space after it when it ends in `,`, `;` or `:` (so "https://a.com, b"
+// is not glued into "https://a.com,b", which would extend the autolink).
+const BARE_URL_PATTERN = /(?:https?:\/\/|www\.)[^\s<>`()\[\]]+(?:(?<=[,;:])\s)?/g;
+
+function processOutsideUrls(text: string, transform: (segment: string) => string): string {
+  let output = "";
+  let last = 0;
+  for (const match of text.matchAll(BARE_URL_PATTERN)) {
+    output += transform(text.slice(last, match.index));
+    output += match[0];
+    last = match.index! + match[0].length;
+  }
+  return output + transform(text.slice(last));
+}
+
+interface ListItemContext {
+  rawIndent: number;
+  rawContentColumn: number;
+  outContentColumn: number;
+}
+
+type ListContext = ListItemContext[];
+
+/**
+ * Registers a list item and returns its output indentation. Nesting follows CommonMark:
+ * an item is a child when it is indented at least to the parent's content column, and
+ * children are re-indented to the parent's (normalized) content column, e.g. 2 for "- "
+ * and 3 for "1. ".
+ */
+function pushListItem(context: ListContext, rawIndent: number, content: string, rootIndent: number): number {
+  const match = content.match(LIST_ITEM_PATTERN)!;
+  const marker = match[1];
+  const spacing = match[2].length > 4 ? 1 : match[2].length;
+
+  while (context.length > 0 && rawIndent < context[context.length - 1].rawContentColumn) {
+    context.pop();
+  }
+
+  const parent = context[context.length - 1];
+  const outIndent = parent === undefined ? rootIndent : parent.outContentColumn;
+  const normalizedMarkerLength = /^[*+]$/.test(marker) ? 1 : marker.length;
+
+  context.push({
+    rawIndent,
+    rawContentColumn: rawIndent + marker.length + spacing,
+    outContentColumn: outIndent + normalizedMarkerLength + 1,
+  });
+
+  return outIndent;
+}
+
+/** Returns the indentation for a non-item line, closing list items it does not belong to. */
+function getListContinuationIndent(context: ListContext, rawIndent: number): number {
+  while (context.length > 0 && rawIndent < context[context.length - 1].rawContentColumn) {
+    context.pop();
+  }
+
+  return context.length === 0 ? 0 : context[context.length - 1].outContentColumn;
+}
+
+/** Splits a table row on unescaped pipes (`\|` stays inside its cell). */
+function splitTableRow(line: string): string[] {
+  const body = line.slice(1, line.endsWith("|") && !line.endsWith("\\|") ? -1 : undefined);
+  return body.split(/(?<!\\)\|/);
 }
 
 function compactTableLine(line: string): string {
-  const cells = line
-    .slice(1, line.endsWith("|") ? -1 : undefined)
-    .split("|")
-    .map((cell) => compactInlinePunctuation(cell.trim()));
+  const cells = splitTableRow(line).map((cell) => compactInlinePunctuation(cell.trim()));
   const keepTrailingPipe = cells[cells.length - 1] === "";
 
   if (cells.every(isTableSeparatorCell)) {
@@ -347,38 +594,25 @@ function formatCompactTableCells(cells: string[], keepTrailingPipe: boolean): st
   return `|${cells.join("|")}${trailing}`;
 }
 
-interface ProtectedListState {
-  indentStack: number[];
-  baseIndent: number;
-}
-
-function compactProtectedBlockLine(line: string, listState: ProtectedListState): string {
+function compactProtectedBlockLine(line: string, listContext: ListContext): string {
   const withoutTabs = line.replace(/\t/g, "  ").trimEnd();
   const content = withoutTabs.trimStart();
   const indent = withoutTabs.slice(0, withoutTabs.length - content.length);
 
   if (content.startsWith("|")) {
-    resetProtectedListState(listState);
+    listContext.length = 0;
     return `${indent}${compactTableLine(content)}`;
   }
 
-  if (/^([-*+]|\d+\.)\s+/.test(content)) {
+  if (LIST_ITEM_PATTERN.test(content)) {
     const rawIndent = withoutTabs.length - content.length;
-    const level = getListLevel(rawIndent, listState.indentStack);
-    if (level === 0) {
-      listState.baseIndent = rawIndent;
-    }
-    const normalizedIndent = " ".repeat(listState.baseIndent + level * 2);
-    return `${normalizedIndent}${compactProtectedListItem(content)}`;
+    // First-level items keep their own indentation; children align with their parent's content.
+    const outIndent = pushListItem(listContext, rawIndent, content, rawIndent);
+    return `${" ".repeat(outIndent)}${compactProtectedListItem(content)}`;
   }
 
-  resetProtectedListState(listState);
+  listContext.length = 0;
   return compactProtectedInlinePunctuation(withoutTabs);
-}
-
-function resetProtectedListState(state: ProtectedListState): void {
-  state.indentStack.length = 0;
-  state.baseIndent = 0;
 }
 
 function shouldInsertProtectedHeadingBlankBefore(current: string, previous: string): boolean {
@@ -403,12 +637,18 @@ function shouldInsertProtectedHeadingBlankBefore(current: string, previous: stri
 }
 
 function compactProtectedListItem(line: string): string {
-  return compactProtectedInlinePunctuation(line.replace(/^([-*+]|\d+\.)\s+/, "$1 "));
+  return compactProtectedInlinePunctuation(line.replace(LIST_ITEM_PATTERN, "$1 "));
 }
 
 function compactProtectedInlinePunctuation(line: string): string {
+  if (!activeOptions.punctuation) {
+    return compactLinks(line);
+  }
+
   return compactLinks(
-    processOutsideInlineCode(line, (segment) => compactWordConnectors(segment.replace(/,\s+/g, ",").replace(/;\s+/g, ";"))),
+    processOutsideInlineCode(line, (segment) =>
+      processOutsideUrls(segment, (part) => compactWordConnectors(part.replace(/,\s+/g, ",").replace(/;\s+/g, ";"))),
+    ),
   );
 }
 
@@ -500,7 +740,7 @@ function expandTableSeparatorCell(cell: string, width: number): string {
 
 function insertSemanticBlanks(lines: string[]): string[] {
   const result: string[] = [];
-  let inFence = false;
+  let fence: FenceInfo | null = null;
   let inFrontmatter = false;
 
   for (let index = 0; index < lines.length; index++) {
@@ -520,16 +760,17 @@ function insertSemanticBlanks(lines: string[]): string[] {
       continue;
     }
 
-    if (isFenceLine(line)) {
-      if (!inFence) {
+    const step = fenceTransition(line, fence);
+    if (step.delimiter) {
+      if (fence === null) {
         pushBlankBeforeIfNeeded(result, line);
       }
       result.push(line);
-      inFence = !inFence;
+      fence = step.open;
       continue;
     }
 
-    if (inFence) {
+    if (fence !== null) {
       result.push(line);
       continue;
     }
@@ -633,11 +874,27 @@ function compactFenceLine(line: string, fenceLanguage: string): string {
 
 function compactMarkdownFenceBlock(lines: string[], indent: string): string[] {
   const result: string[] = [];
-  const listIndentStack: number[] = [];
+  const listContext: ListContext = [];
   const htmlCommentState = { inComment: false };
   let blankPending = false;
+  let nestedFence: FenceInfo | null = null;
 
   for (const rawLine of removeThematicBreaksBeforeHeadings(lines)) {
+    // Code fences nested inside a Markdown fence are copied verbatim.
+    const nestedStep: { open: FenceInfo | null; delimiter: boolean } = htmlCommentState.inComment
+      ? { open: nestedFence, delimiter: false }
+      : fenceTransition(rawLine, nestedFence);
+    if (nestedStep.delimiter || nestedFence !== null) {
+      if (nestedStep.delimiter && nestedFence === null && result.length > 0 && blankPending) {
+        result.push(indent);
+      }
+      nestedFence = nestedStep.open;
+      listContext.length = 0;
+      blankPending = false;
+      result.push(rawLine.trimEnd());
+      continue;
+    }
+
     const hasTrailingDoubleSpace = /  +$/.test(rawLine);
     const trimmedEnd = rawLine.trimEnd();
     const content = trimmedEnd.trimStart();
@@ -647,7 +904,7 @@ function compactMarkdownFenceBlock(lines: string[], indent: string): string[] {
     const reindented = lineIndent.length > indent.length
       ? " ".repeat(lineIndent.length - indent.length) + withoutComment
       : withoutComment;
-    const cleaned = compactWhitespace(reindented, listIndentStack);
+    const cleaned = compactWhitespace(reindented, listContext);
 
     if (cleaned === "") {
       blankPending = true;
@@ -672,8 +929,14 @@ function compactMarkdownFenceBlock(lines: string[], indent: string): string[] {
 }
 
 function compactInlinePunctuation(line: string): string {
+  if (!activeOptions.punctuation) {
+    return processOutsideInlineCode(line, compactLinks);
+  }
+
   return processOutsideInlineCode(line, (segment) =>
-    compactLinks(compactWordConnectors(segment.replace(/,\s+/g, ",").replace(/;\s+/g, ";").replace(/\s*\/\s*/g, "/"))),
+    processOutsideUrls(segment, (part) =>
+      compactLinks(compactWordConnectors(part.replace(/,\s+/g, ",").replace(/;\s+/g, ";").replace(/([^:\s]|^)\s*\/\s*/g, "$1/"))),
+    ),
   );
 }
 
@@ -687,9 +950,8 @@ function compactWordConnectors(line: string): string {
 }
 
 function compactLinks(line: string): string {
-  const withCheckboxes = line
-    .replace(/\[\s*([ xX])\s*\]/g, "[$1]")
-    .replace(/\[ \]/g, "[]");
+  const normalizedCheckboxes = line.replace(/\[\s*([ xX])\s*\]/g, "[$1]");
+  const withCheckboxes = activeOptions.punctuation ? normalizedCheckboxes.replace(/\[ \]/g, "[]") : normalizedCheckboxes;
 
   return withCheckboxes
     .replace(/\[(?!\s*[ xX]\s*\])\s+/g, "[")
@@ -738,7 +1000,7 @@ function processOutsideInlineCode(line: string, transform: (segment: string) => 
   return parts.join("");
 }
 
-function getFenceLanguage(line: string): string {
+export function getFenceLanguage(line: string): string {
   return line
     .trim()
     .replace(/^`{3,}|^~{3,}/, "")
@@ -747,7 +1009,7 @@ function getFenceLanguage(line: string): string {
     .toLowerCase();
 }
 
-function isMarkdownFenceLanguage(language: string): boolean {
+export function isMarkdownFenceLanguage(language: string): boolean {
   return language === "md" || language === "markdown";
 }
 
@@ -763,7 +1025,7 @@ function normalizeTableSeparatorCell(cell: string): string {
 }
 
 function compactListItem(line: string): string {
-  return compactInlinePunctuation(line.replace(/^([*+])\s+/, "- ").replace(/ {2,}/g, " "));
+  return compactInlinePunctuation(collapseSpaces(line.replace(/^([*+])\s+/, "- ")));
 }
 
 function compactBlockquote(line: string): string {
@@ -784,45 +1046,9 @@ function compactBlockquote(line: string): string {
   }
 
   const marker = "> ".repeat(depth);
-  const content = compactInlinePunctuation(line.slice(index).trimStart().replace(/ {2,}/g, " "));
+  const content = compactInlinePunctuation(collapseSpaces(line.slice(index).trimStart()));
 
   return `${marker}${content}`.trimEnd();
-}
-
-function getListLevel(rawIndent: number, listIndentStack: number[]): number {
-  if (listIndentStack.length === 0) {
-    listIndentStack.push(rawIndent);
-    return 0;
-  }
-
-  const existingLevel = listIndentStack.indexOf(rawIndent);
-  if (existingLevel >= 0) {
-    listIndentStack.length = existingLevel + 1;
-    return existingLevel;
-  }
-
-  if (rawIndent > listIndentStack[listIndentStack.length - 1]) {
-    listIndentStack.push(rawIndent);
-    return listIndentStack.length - 1;
-  }
-
-  while (listIndentStack.length > 1 && rawIndent < listIndentStack[listIndentStack.length - 1]) {
-    listIndentStack.pop();
-  }
-
-  if (rawIndent > listIndentStack[listIndentStack.length - 1]) {
-    listIndentStack.push(rawIndent);
-    return listIndentStack.length - 1;
-  }
-
-  if (rawIndent <= listIndentStack[0]) {
-    listIndentStack.length = 1;
-    listIndentStack[0] = rawIndent;
-    return 0;
-  }
-
-  listIndentStack[listIndentStack.length - 1] = rawIndent;
-  return listIndentStack.length - 1;
 }
 
 function shouldKeepBlankBefore(current: string, previous: string, blankPending: boolean): boolean {
@@ -835,9 +1061,15 @@ function shouldKeepBlankBefore(current: string, previous: string, blankPending: 
   const currentIsBlockquote = isBlockquoteLine(current);
   const previousIsBlockquote = isBlockquoteLine(previous);
   const currentIsListItem = isListItemLine(current);
-  const previousIsListItem = isListItemLine(previous);
+  const previousInList = isListItemLine(previous) || isListContinuationLine(previous);
 
-  if (previousIsListItem && !currentIsListItem) {
+  // An indented continuation belongs to the list item above it: keep the source spacing
+  // (a blank line means a new paragraph inside the item, no blank means the same paragraph).
+  if (isListContinuationLine(current)) {
+    return blankPending;
+  }
+
+  if (previousInList && !currentIsListItem) {
     return true;
   }
 
@@ -900,7 +1132,12 @@ function isBlockquoteLine(line: string): boolean {
 }
 
 function isListItemLine(line: string): boolean {
-  return /^(?: {2})*(?:[-*+]|\d+\.)\s+/.test(line);
+  return /^ *(?:[-*+]|\d{1,9}[.)])\s+/.test(line);
+}
+
+/** An indented line that is not itself a list item (compact output only indents list content). */
+function isListContinuationLine(line: string): boolean {
+  return /^ +\S/.test(line) && !isListItemLine(line);
 }
 
 function isXmlOpenTagLine(line: string): boolean {
