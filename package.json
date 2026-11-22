@@ -112,6 +112,26 @@
           "type": "boolean",
           "default": true,
           "description": "Skip files ending with .human.md or .compact.md when processing folders."
+        },
+        "mdPromptPack.compactValidation": {
+          "type": "string",
+          "enum": [
+            "warn",
+            "block",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Write the compact file and warn if code blocks, headings, inline code, URLs or list items changed.",
+            "Do not write the compact file if any of those invariants changed.",
+            "Skip the check."
+          ],
+          "default": "warn",
+          "description": "Check that compaction kept code blocks, headings, inline code, link URLs and list items unchanged."
+        },
+        "mdPromptPack.showTokenStats": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the approximate token count before and after compaction."
         }
       }
     }
@@ -120,7 +140,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test:unit": "npm run compile && node ./out/test/markdownPack.test.js",
+    "test:unit": "npm run compile && node ./out/test/markdownPack.test.js && node ./out/test/compactValidation.test.js",
     "package": "node ./scripts/bump-version.js && vsce package",
     "deploy": "npm run package && pwsh -Command \"code --install-extension (Get-ChildItem *.vsix | Sort-Object LastWriteTime -Descending | Select-Object -First 1).Name --force\""
   },

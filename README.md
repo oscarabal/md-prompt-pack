@@ -60,6 +60,29 @@ instructions/.mdpack/spec.compact.md
 
 Compact outputs overwrite existing `*.compact.md` files automatically. The `mdPromptPack.overwrite` setting only controls whether non-compact generated files such as `*.human.md` can be overwritten.
 
+### Compact safety check and token stats
+
+After generating a compact file, the extension checks that compaction did not change content that must survive exactly:
+
+- Code blocks (compared without trailing whitespace and uniform base indentation; `md` fences are only counted, since their content is compacted)
+- Heading levels and text (ignoring whitespace)
+- Inline code spans (outside tables)
+- Link URLs and bare URLs
+- Number of list items
+
+If something changed, a warning is shown and the details are written to the **MD Prompt Pack** output channel.
+
+The completion message also shows the approximate token count before and after compaction, for example `≈379 → ≈333 tokens (−12.1%)`. It is a dependency-free BPE-style estimate meant for comparing versions, not an exact tokenizer count.
+
+```json
+{
+  "mdPromptPack.compactValidation": "warn",
+  "mdPromptPack.showTokenStats": true
+}
+```
+
+`compactValidation` accepts `warn` (default: write and warn), `block` (do not write the compact file) or `off`.
+
 ## Human Mode
 
 Human mode improves readability of any Markdown file, including previously generated `*.compact.md` files.

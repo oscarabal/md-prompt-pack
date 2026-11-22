@@ -934,3 +934,26 @@ test("compact markdown is idempotent", () => {
 
   assert.strictEqual(toCompactMarkdown(once), once);
 });
+
+// --- Inline fixes found by the compact validator ---
+
+test("compact markdown keeps repeated spaces inside inline code", () => {
+  assert.strictEqual(toCompactMarkdown("Use `a  b`  and  x\n"), "Use `a  b` and x\n");
+  assert.strictEqual(toCompactMarkdown("- item `a  b`\n"), "- item `a  b`\n");
+});
+
+test("compact markdown does not glue text after a bare URL", () => {
+  assert.strictEqual(toCompactMarkdown("See https://a.com, and b, c\n"), "See https://a.com, and b,c\n");
+});
+
+test("compact markdown does not create a URL from a spaced slash after a colon", () => {
+  assert.strictEqual(toCompactMarkdown("http: //x and src / main\n"), "http: //x and src/main\n");
+});
+
+test("compact markdown keeps starred thematic breaks out of lists", () => {
+  assert.strictEqual(toCompactMarkdown("Text\n\n* * *\n\nMore\n"), "Text\n* * *\n\nMore\n");
+});
+
+test("compact markdown keeps escaped pipes inside table cells", () => {
+  assert.strictEqual(toCompactMarkdown("|a|b|\n|--|--|\n|x \\| y|z|\n"), "|a|b\n|--|--\n|x \\| y|z\n");
+});

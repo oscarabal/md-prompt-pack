@@ -272,7 +272,7 @@ export function toCompactMarkdown(markdown: string): string {
   return ensureTrailingNewline(result.join("\n"));
 }
 
-function normalizeLineEndings(value: string): string {
+export function normalizeLineEndings(value: string): string {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
@@ -338,13 +338,13 @@ function isFenceLine(line: string): boolean {
   return trimmed.startsWith("```") || trimmed.startsWith("~~~");
 }
 
-interface FenceInfo {
+export interface FenceInfo {
   char: string;
   length: number;
 }
 
 /** Parses an opening code fence. A closing fence must use the same character and be at least as long. */
-function parseFenceOpen(line: string): FenceInfo | null {
+export function parseFenceOpen(line: string): FenceInfo | null {
   const match = line.trim().match(/^(`{3,}|~{3,})(.*)$/);
   if (match === null) {
     return null;
@@ -358,7 +358,7 @@ function parseFenceOpen(line: string): FenceInfo | null {
   return { char: match[1][0], length: match[1].length };
 }
 
-function isFenceClose(line: string, fence: FenceInfo): boolean {
+export function isFenceClose(line: string, fence: FenceInfo): boolean {
   const match = line.trim().match(/^(`{3,}|~{3,})$/);
   return match !== null && match[1][0] === fence.char && match[1].length >= fence.length;
 }
@@ -391,7 +391,7 @@ function isIndentedCodeLine(line: string): boolean {
   return line.trim() !== "" && leadingColumns(line) >= 4;
 }
 
-function removeHtmlComments(line: string, state: { inComment: boolean }): string {
+export function removeHtmlComments(line: string, state: { inComment: boolean }): string {
   let output = "";
   let remaining = line;
 
@@ -458,6 +458,11 @@ function compactWhitespace(line: string, listContext: ListContext): string {
 
   const rawIndent = withoutTabs.length - content.length;
 
+  if (isAnyThematicBreak(content)) {
+    listContext.length = 0;
+    return content;
+  }
+
   if (LIST_ITEM_PATTERN.test(content)) {
     const outIndent = pushListItem(listContext, rawIndent, content, 0);
     return `${" ".repeat(outIndent)}${compactListItem(content)}`;
@@ -470,10 +475,35 @@ function compactWhitespace(line: string, listContext: ListContext): string {
 
   // Indented continuation of a list item: keep it aligned with the item content.
   const continuationIndent = getListContinuationIndent(listContext, rawIndent);
-  return `${" ".repeat(continuationIndent)}${compactInlinePunctuation(content.replace(/ {2,}/g, " "))}`;
+  return `${" ".repeat(continuationIndent)}${compactInlinePunctuation(collapseSpaces(content))}`;
 }
 
 const LIST_ITEM_PATTERN = /^([-*+]|\d{1,9}[.)])(\s+)/;
+
+/** Thematic breaks such as `***`, `* * *`, `- - -` or `___` (kept as written). */
+function isAnyThematicBreak(content: string): boolean {
+  return /^([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(content);
+}
+
+/** Collapses repeated spaces outside inline code spans. */
+function collapseSpaces(text: string): string {
+  return processOutsideInlineCode(text, (segment) => segment.replace(/ {2,}/g, " "));
+}
+
+// A bare URL, plus the space after it when it ends in `,`, `;` or `:` (so "https://a.com, b"
+// is not glued into "https://a.com,b", which would extend the autolink).
+const BARE_URL_PATTERN = /(?:https?:\/\/|www\.)[^\s<>`()\[\]]+(?:(?<=[,;:])\s)?/g;
+
+function processOutsideUrls(text: string, transform: (segment: string) => string): string {
+  let output = "";
+  let last = 0;
+  for (const match of text.matchAll(BARE_URL_PATTERN)) {
+    output += transform(text.slice(last, match.index));
+    output += match[0];
+    last = match.index! + match[0].length;
+  }
+  return output + transform(text.slice(last));
+}
 
 interface ListItemContext {
   rawIndent: number;
@@ -520,11 +550,14 @@ function getListContinuationIndent(context: ListContext, rawIndent: number): num
   return context.length === 0 ? 0 : context[context.length - 1].outContentColumn;
 }
 
+/** Splits a table row on unescaped pipes (`\|` stays inside its cell). */
+function splitTableRow(line: string): string[] {
+  const body = line.slice(1, line.endsWith("|") && !line.endsWith("\\|") ? -1 : undefined);
+  return body.split(/(?<!\\)\|/);
+}
+
 function compactTableLine(line: string): string {
-  const cells = line
-    .slice(1, line.endsWith("|") ? -1 : undefined)
-    .split("|")
-    .map((cell) => compactInlinePunctuation(cell.trim()));
+  const cells = splitTableRow(line).map((cell) => compactInlinePunctuation(cell.trim()));
   const keepTrailingPipe = cells[cells.length - 1] === "";
 
   if (cells.every(isTableSeparatorCell)) {
@@ -587,7 +620,9 @@ function compactProtectedListItem(line: string): string {
 
 function compactProtectedInlinePunctuation(line: string): string {
   return compactLinks(
-    processOutsideInlineCode(line, (segment) => compactWordConnectors(segment.replace(/,\s+/g, ",").replace(/;\s+/g, ";"))),
+    processOutsideInlineCode(line, (segment) =>
+      processOutsideUrls(segment, (part) => compactWordConnectors(part.replace(/,\s+/g, ",").replace(/;\s+/g, ";"))),
+    ),
   );
 }
 
@@ -869,7 +904,9 @@ function compactMarkdownFenceBlock(lines: string[], indent: string): string[] {
 
 function compactInlinePunctuation(line: string): string {
   return processOutsideInlineCode(line, (segment) =>
-    compactLinks(compactWordConnectors(segment.replace(/,\s+/g, ",").replace(/;\s+/g, ";").replace(/\s*\/\s*/g, "/"))),
+    processOutsideUrls(segment, (part) =>
+      compactLinks(compactWordConnectors(part.replace(/,\s+/g, ",").replace(/;\s+/g, ";").replace(/([^:\s]|^)\s*\/\s*/g, "$1/"))),
+    ),
   );
 }
 
@@ -934,7 +971,7 @@ function processOutsideInlineCode(line: string, transform: (segment: string) => 
   return parts.join("");
 }
 
-function getFenceLanguage(line: string): string {
+export function getFenceLanguage(line: string): string {
   return line
     .trim()
     .replace(/^`{3,}|^~{3,}/, "")
@@ -943,7 +980,7 @@ function getFenceLanguage(line: string): string {
     .toLowerCase();
 }
 
-function isMarkdownFenceLanguage(language: string): boolean {
+export function isMarkdownFenceLanguage(language: string): boolean {
   return language === "md" || language === "markdown";
 }
 
@@ -959,7 +996,7 @@ function normalizeTableSeparatorCell(cell: string): string {
 }
 
 function compactListItem(line: string): string {
-  return compactInlinePunctuation(line.replace(/^([*+])\s+/, "- ").replace(/ {2,}/g, " "));
+  return compactInlinePunctuation(collapseSpaces(line.replace(/^([*+])\s+/, "- ")));
 }
 
 function compactBlockquote(line: string): string {
@@ -980,7 +1017,7 @@ function compactBlockquote(line: string): string {
   }
 
   const marker = "> ".repeat(depth);
-  const content = compactInlinePunctuation(line.slice(index).trimStart().replace(/ {2,}/g, " "));
+  const content = compactInlinePunctuation(collapseSpaces(line.slice(index).trimStart()));
 
   return `${marker}${content}`.trimEnd();
 }

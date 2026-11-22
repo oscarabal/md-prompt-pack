@@ -1,5 +1,6 @@
 import * as path from "path";
 import * as vscode from "vscode";
+import { validateCompact, ValidationIssue } from "./compactValidation";
 import {
   getConfiguration,
   getOutputUri,
@@ -9,8 +10,22 @@ import {
   OutputKind
 } from "./fileNaming";
 import { toCompactMarkdown, toHumanMarkdown } from "./markdownTransform";
+import { estimateTokens, formatTokenStats, TokenStats } from "./tokenEstimate";
 
 export type GenerationMode = "human" | "compact" | "both";
+
+interface CompactResult {
+  written: boolean;
+  issues: ValidationIssue[];
+  stats: TokenStats;
+}
+
+let outputChannel: vscode.OutputChannel | undefined;
+
+function getOutputChannel(): vscode.OutputChannel {
+  outputChannel ??= vscode.window.createOutputChannel("MD Prompt Pack");
+  return outputChannel;
+}
 
 export async function generateForFile(uri: vscode.Uri | undefined, mode: GenerationMode): Promise<void> {
   const input = uri ?? vscode.window.activeTextEditor?.document.uri;
@@ -31,16 +46,27 @@ export async function generateForFile(uri: vscode.Uri | undefined, mode: Generat
   }
 
   const original = await readText(input);
+  const relativePath = getWorkspaceRelativePath(input);
 
   if (mode === "human" || mode === "both") {
     await writeOutput(input, "human", toHumanMarkdown(original));
   }
 
+  let summary = `Markdown ${mode} generation completed for ${relativePath}.`;
+
   if (mode === "compact" || mode === "both") {
-    await writeOutput(input, "compact", toCompactMarkdown(original));
+    const result = await generateCompact(input, original);
+    if (getConfiguration().showTokenStats) {
+      summary += ` ${formatTokenStats(result.stats)}`;
+    }
+
+    if (result.issues.length > 0) {
+      await reportIssues(result, relativePath, summary);
+      return;
+    }
   }
 
-  vscode.window.showInformationMessage(`Markdown ${mode} generation completed for ${getWorkspaceRelativePath(input)}.`);
+  vscode.window.showInformationMessage(summary);
 }
 
 export async function generateCompactForFolder(uri: vscode.Uri | undefined): Promise<void> {
@@ -50,15 +76,84 @@ export async function generateCompactForFolder(uri: vscode.Uri | undefined): Pro
   }
 
   const files = await collectMarkdownFiles(uri);
-  let count = 0;
+  const totals: TokenStats = { before: 0, after: 0 };
+  let written = 0;
+  let filesWithIssues = 0;
+  let blocked = 0;
 
   for (const file of files) {
     const original = await readText(file);
-    await writeOutput(file, "compact", toCompactMarkdown(original));
-    count++;
+    const result = await generateCompact(file, original);
+    totals.before += result.stats.before;
+    totals.after += result.stats.after;
+
+    if (result.written) {
+      written++;
+    } else {
+      blocked++;
+    }
+
+    if (result.issues.length > 0) {
+      filesWithIssues++;
+      logIssues(getWorkspaceRelativePath(file), result.issues, result.written);
+    }
   }
 
-  vscode.window.showInformationMessage(`Generated ${count} compact Markdown file(s).`);
+  let summary = `Generated ${written} compact Markdown file(s).`;
+  if (getConfiguration().showTokenStats && files.length > 0) {
+    summary += ` ${formatTokenStats(totals)}`;
+  }
+
+  if (filesWithIssues === 0) {
+    vscode.window.showInformationMessage(summary);
+    return;
+  }
+
+  const blockedText = blocked > 0 ? ` ${blocked} file(s) not written.` : "";
+  const action = await vscode.window.showWarningMessage(
+    `${summary} Compaction changed protected content in ${filesWithIssues} file(s).${blockedText}`,
+    "Show details"
+  );
+  if (action === "Show details") {
+    getOutputChannel().show(true);
+  }
+}
+
+async function generateCompact(input: vscode.Uri, original: string): Promise<CompactResult> {
+  const config = getConfiguration();
+  const compact = toCompactMarkdown(original);
+  const issues = config.compactValidation === "off" ? [] : validateCompact(original, compact);
+  const stats = { before: estimateTokens(original), after: estimateTokens(compact) };
+
+  if (issues.length > 0 && config.compactValidation === "block") {
+    return { written: false, issues, stats };
+  }
+
+  await writeOutput(input, "compact", compact);
+  return { written: true, issues, stats };
+}
+
+async function reportIssues(result: CompactResult, relativePath: string, summary: string): Promise<void> {
+  logIssues(relativePath, result.issues, result.written);
+
+  const prefix = result.written
+    ? `${summary} Warning: compaction changed protected content (${result.issues.length} issue(s)).`
+    : `Compact file not written for ${relativePath}: compaction changed protected content (${result.issues.length} issue(s)).`;
+  const action = result.written
+    ? await vscode.window.showWarningMessage(prefix, "Show details")
+    : await vscode.window.showErrorMessage(prefix, "Show details");
+
+  if (action === "Show details") {
+    getOutputChannel().show(true);
+  }
+}
+
+function logIssues(relativePath: string, issues: ValidationIssue[], written: boolean): void {
+  const channel = getOutputChannel();
+  channel.appendLine(`[${new Date().toISOString()}] ${relativePath}${written ? "" : " (not written)"}`);
+  for (const issue of issues) {
+    channel.appendLine(`  - ${issue.message}`);
+  }
 }
 
 async function collectMarkdownFiles(folder: vscode.Uri): Promise<vscode.Uri[]> {

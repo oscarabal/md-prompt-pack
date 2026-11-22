@@ -8,6 +8,8 @@ export interface MdPromptPackConfiguration {
   generatedFolderName: string;
   overwrite: boolean;
   excludeGeneratedFiles: boolean;
+  compactValidation: "off" | "warn" | "block";
+  showTokenStats: boolean;
 }
 
 export function getConfiguration(): MdPromptPackConfiguration {
@@ -17,7 +19,9 @@ export function getConfiguration(): MdPromptPackConfiguration {
     outputMode: config.get<"sibling" | "generatedFolder">("outputMode", "sibling"),
     generatedFolderName: config.get<string>("generatedFolderName", ".mdpack"),
     overwrite: config.get<boolean>("overwrite", true),
-    excludeGeneratedFiles: config.get<boolean>("excludeGeneratedFiles", true)
+    excludeGeneratedFiles: config.get<boolean>("excludeGeneratedFiles", true),
+    compactValidation: config.get<"off" | "warn" | "block">("compactValidation", "warn"),
+    showTokenStats: config.get<boolean>("showTokenStats", true)
   };
 }
 

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add a compact safety check (`mdPromptPack.compactValidation`: `warn`, `block`, `off`) that verifies code blocks, headings, inline code, URLs and list item counts are unchanged; details go to the "MD Prompt Pack" output channel.
+- Show approximate token counts before and after compaction (`mdPromptPack.showTokenStats`), per file and per folder.
+- Fix: repeated spaces inside inline code are no longer collapsed.
+- Fix: text after a bare URL followed by `,`, `;` or `:` is no longer glued to the URL.
+- Fix: `a: / b` style spacing no longer creates URLs such as `http://x` from `http: //x`.
+- Fix: starred thematic breaks (`* * *`) are no longer turned into list items.
+- Fix: escaped pipes (`\|`) inside table cells are no longer treated as cell separators.
 - Fix: code fences inside protected blocks (`<prompt>`, `<task>`, ...) are no longer compacted.
 - Fix: indented code blocks are preserved verbatim instead of being flattened and compacted.
 - Fix: code fences now match opening character and length; nested and mixed fences no longer flip fence state.
