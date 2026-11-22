@@ -116,6 +116,15 @@ Transformations applied (YAML frontmatter is preserved verbatim; code fence cont
 - Forces a blank line before critical section headings: `Hard Rules`, `Required Inputs`, `Output Template`, `Critical Rules`, `Important`
 - Removes tabs; normalizes multiple spaces to single spaces
 
+### Minimal blank lines (optional)
+
+By default compact mode keeps blank lines around headings, code fences and other semantic blocks for readability. Set `"mdPromptPack.compactBlankLines": "minimal"` to keep only the blank lines Markdown needs to parse the same way:
+
+- Removed: blank lines before and after headings (including critical headings), around code fences, before blockquotes, and after XML-like open tags
+- Kept: before paragraph text, a table or an XML-like tag that follows a list item, table row or blockquote (otherwise it would be absorbed into it); between paragraph text and a table or `---` (otherwise it becomes a table header or a setext heading); after an XML-like close tag; before an indented code block that follows a paragraph; between paragraphs inside a list item
+
+Most BPE tokenizers encode `\n\n` as a single token, like `\n`, so this saves characters but few tokens.
+
 ### Punctuation compaction (optional)
 
 Disabled by default. Enable it with:

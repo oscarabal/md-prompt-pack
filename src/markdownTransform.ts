@@ -86,13 +86,19 @@ export interface CompactOptions {
    * Default: false.
    */
   punctuation?: boolean;
+  /**
+   * Blank line policy outside code. `readable` (default) keeps blank lines around headings,
+   * code fences and other semantic blocks. `minimal` keeps only the blank lines Markdown needs
+   * to parse the same way (e.g. before a paragraph that follows a list, table or blockquote).
+   */
+  blankLines?: "readable" | "minimal";
 }
 
-let activeOptions: Required<CompactOptions> = { punctuation: false };
+let activeOptions: Required<CompactOptions> = { punctuation: false, blankLines: "readable" };
 
 export function toCompactMarkdown(markdown: string, options: CompactOptions = {}): string {
   const previousOptions = activeOptions;
-  activeOptions = { punctuation: options.punctuation ?? false };
+  activeOptions = { punctuation: options.punctuation ?? false, blankLines: options.blankLines ?? "readable" };
   try {
     return compactMarkdownDocument(markdown);
   } finally {
@@ -206,7 +212,12 @@ function compactMarkdownDocument(markdown: string): string {
     const fenceOpen = htmlCommentState.inComment ? null : parseFenceOpen(line);
     if (fenceOpen !== null) {
       listContext.length = 0;
-      if (result.length > 0 && (blankPending || isListItemLine(result[result.length - 1]))) {
+      // A fence can interrupt a paragraph or end a list, so minimal mode needs no blank before it.
+      if (
+        activeOptions.blankLines === "readable" &&
+        result.length > 0 &&
+        (blankPending || isListItemLine(result[result.length - 1]))
+      ) {
         result.push("");
       }
 
@@ -253,8 +264,12 @@ function compactMarkdownDocument(markdown: string): string {
       isIndentedCodeLine(line) &&
       (result.length === 0 || blankPending || isHeadingLine(result[result.length - 1]))
     ) {
-      // Indented code block (4+ columns after a blank line): copy verbatim.
-      if (result.length > 0) {
+      // Indented code block (4+ columns after a blank line): copy verbatim. It cannot interrupt
+      // a paragraph, so it needs a blank before it unless it follows a heading.
+      if (
+        result.length > 0 &&
+        (activeOptions.blankLines === "readable" || !isHeadingLine(result[result.length - 1]))
+      ) {
         result.push("");
       }
 
@@ -616,6 +631,10 @@ function compactProtectedBlockLine(line: string, listContext: ListContext): stri
 }
 
 function shouldInsertProtectedHeadingBlankBefore(current: string, previous: string): boolean {
+  if (activeOptions.blankLines === "minimal") {
+    return false;
+  }
+
   const currentContent = current.trimStart();
   const previousContent = previous.trimStart();
   const currentIsHeading = isHeadingLine(currentContent);
@@ -1052,6 +1071,10 @@ function compactBlockquote(line: string): string {
 }
 
 function shouldKeepBlankBefore(current: string, previous: string, blankPending: boolean): boolean {
+  if (activeOptions.blankLines === "minimal") {
+    return needsBlankBefore(current, previous, blankPending);
+  }
+
   const currentIsTable = isTableLine(current);
   const previousIsTable = isTableLine(previous);
   const currentIsHeading = isHeadingLine(current);
@@ -1109,6 +1132,65 @@ function shouldKeepBlankBefore(current: string, previous: string, blankPending: 
     currentIsBlockquote ||
     previousIsBlockquote
   );
+}
+
+/** A line that would be read as paragraph text (and so can lazily continue the block above). */
+function isParagraphTextLine(line: string): boolean {
+  return (
+    !isHeadingLine(line) &&
+    !isFenceLine(line) &&
+    !isTableLine(line) &&
+    !isBlockquoteLine(line) &&
+    !isListItemLine(line) &&
+    !isListContinuationLine(line) &&
+    !isAnyThematicBreak(line.trim()) &&
+    !isXmlTagLine(line)
+  );
+}
+
+/**
+ * Minimal blank line policy: keep a blank only where removing it would change how the
+ * Markdown is parsed. Headings and code fences can interrupt any block, so they never need one.
+ */
+function needsBlankBefore(current: string, previous: string, blankPending: boolean): boolean {
+  // List continuation: a blank separates paragraphs inside the item.
+  if (isListContinuationLine(current)) {
+    return blankPending;
+  }
+
+  const previousInList = isListItemLine(previous) || isListContinuationLine(previous);
+  const currentCanBeAbsorbed = isParagraphTextLine(current) || isTableLine(current) || isXmlTagLine(current);
+
+  // Without a blank, text after a list item, table row or blockquote is absorbed into it
+  // (lazy continuation, or an extra table row).
+  if (previousInList && (currentCanBeAbsorbed || isAnyThematicBreak(current.trim()))) {
+    return true;
+  }
+
+  if (isTableLine(previous) && !isTableLine(current) && (isParagraphTextLine(current) || isXmlTagLine(current))) {
+    return true;
+  }
+
+  if (isBlockquoteLine(previous) && !isBlockquoteLine(current) && isParagraphTextLine(current)) {
+    return true;
+  }
+
+  if (!blankPending) {
+    return false;
+  }
+
+  // An HTML block (started by a tag line) runs until a blank line, so keep the blank that ends it.
+  if (isXmlCloseTagLine(previous)) {
+    return true;
+  }
+
+  // Paragraph text followed by a table or `---` would become a table header or a setext heading.
+  if (isParagraphTextLine(previous) && (isTableLine(current) || isAnyThematicBreak(current.trim()))) {
+    return true;
+  }
+
+  // XML-like tags start HTML blocks, which cannot interrupt a paragraph and run until a blank line.
+  return isXmlTagLine(current) && isParagraphTextLine(previous);
 }
 
 function isTableLine(line: string): boolean {
