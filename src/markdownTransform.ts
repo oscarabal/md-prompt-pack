@@ -78,7 +78,29 @@ export function toHumanMarkdown(markdown: string): string {
   return ensureTrailingNewline(insertSemanticBlanks(result).join("\n"));
 }
 
-export function toCompactMarkdown(markdown: string): string {
+export interface CompactOptions {
+  /**
+   * Aggressive punctuation rules: remove spaces after `,` `;` `:`, around `/` and around word
+   * connectors (`-` `+` `<` `>` `→` `—`), and collapse `[ ]` to `[]`. They save characters but
+   * rarely tokens, and can change meaning (`x - 1` → `x-1`, `key: value` → `key:value`).
+   * Default: false.
+   */
+  punctuation?: boolean;
+}
+
+let activeOptions: Required<CompactOptions> = { punctuation: false };
+
+export function toCompactMarkdown(markdown: string, options: CompactOptions = {}): string {
+  const previousOptions = activeOptions;
+  activeOptions = { punctuation: options.punctuation ?? false };
+  try {
+    return compactMarkdownDocument(markdown);
+  } finally {
+    activeOptions = previousOptions;
+  }
+}
+
+function compactMarkdownDocument(markdown: string): string {
   const normalized = normalizeLineEndings(markdown);
   const lines = removeThematicBreaksBeforeHeadings(normalized.split("\n"));
 
@@ -619,6 +641,10 @@ function compactProtectedListItem(line: string): string {
 }
 
 function compactProtectedInlinePunctuation(line: string): string {
+  if (!activeOptions.punctuation) {
+    return compactLinks(line);
+  }
+
   return compactLinks(
     processOutsideInlineCode(line, (segment) =>
       processOutsideUrls(segment, (part) => compactWordConnectors(part.replace(/,\s+/g, ",").replace(/;\s+/g, ";"))),
@@ -903,6 +929,10 @@ function compactMarkdownFenceBlock(lines: string[], indent: string): string[] {
 }
 
 function compactInlinePunctuation(line: string): string {
+  if (!activeOptions.punctuation) {
+    return processOutsideInlineCode(line, compactLinks);
+  }
+
   return processOutsideInlineCode(line, (segment) =>
     processOutsideUrls(segment, (part) =>
       compactLinks(compactWordConnectors(part.replace(/,\s+/g, ",").replace(/;\s+/g, ";").replace(/([^:\s]|^)\s*\/\s*/g, "$1/"))),
@@ -920,9 +950,8 @@ function compactWordConnectors(line: string): string {
 }
 
 function compactLinks(line: string): string {
-  const withCheckboxes = line
-    .replace(/\[\s*([ xX])\s*\]/g, "[$1]")
-    .replace(/\[ \]/g, "[]");
+  const normalizedCheckboxes = line.replace(/\[\s*([ xX])\s*\]/g, "[$1]");
+  const withCheckboxes = activeOptions.punctuation ? normalizedCheckboxes.replace(/\[ \]/g, "[]") : normalizedCheckboxes;
 
   return withCheckboxes
     .replace(/\[(?!\s*[ xX]\s*\])\s+/g, "[")

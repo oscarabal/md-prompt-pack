@@ -1,5 +1,8 @@
 import * as assert from "assert";
-import { toCompactMarkdown, toHumanMarkdown } from "../src/markdownTransform";
+import { toCompactMarkdown as compactMarkdown, toHumanMarkdown } from "../src/markdownTransform";
+
+// Most tests below cover the full rule set, including the optional punctuation rules.
+const toCompactMarkdown = (markdown: string): string => compactMarkdown(markdown, { punctuation: true });
 
 function test(name: string, fn: () => void): void {
   try {
@@ -956,4 +959,35 @@ test("compact markdown keeps starred thematic breaks out of lists", () => {
 
 test("compact markdown keeps escaped pipes inside table cells", () => {
   assert.strictEqual(toCompactMarkdown("|a|b|\n|--|--|\n|x \\| y|z|\n"), "|a|b\n|--|--\n|x \\| y|z\n");
+});
+
+// --- Optional punctuation rules ---
+
+test("compact markdown leaves punctuation spacing alone by default", () => {
+  const input = "Use red, green; and blue: x - 1, a / b, a → b, [ ] task\n- [ ] pending\n";
+
+  assert.strictEqual(compactMarkdown(input), input);
+});
+
+test("compact markdown still removes whitespace noise by default", () => {
+  const input = "# Title\n\n\n\nText   with    spaces,  ok.\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n* item\n    * child\n\nSee [ docs ]( https://a.com ).\n<!-- note -->\n";
+
+  assert.strictEqual(
+    compactMarkdown(input),
+    "# Title\n\nText with spaces, ok.\n\n|A|B\n|--|--\n|1|2\n\n- item\n  - child\n\nSee [docs](https://a.com).\n",
+  );
+});
+
+test("compact markdown applies punctuation rules only when enabled", () => {
+  const input = "Default: all, then x - y / z\n- [ ] task\n";
+
+  assert.strictEqual(compactMarkdown(input, { punctuation: true }), "Default:all,then x-y/z\n- [] task\n");
+  assert.strictEqual(compactMarkdown(input, { punctuation: false }), input);
+});
+
+test("compact markdown leaves punctuation alone inside protected blocks by default", () => {
+  const input = "<prompt>\na, b - c\n</prompt>\n";
+
+  assert.strictEqual(compactMarkdown(input), input);
+  assert.strictEqual(compactMarkdown(input, { punctuation: true }), "<prompt>\na,b-c\n</prompt>\n");
 });

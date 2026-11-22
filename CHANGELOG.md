@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Behavior change:** punctuation compaction is now optional and disabled by default (`mdPromptPack.compactPunctuation`). This covers spaces after `,` `;` `:`, around `/` and word connectors, and `[ ]` → `[]`. `toCompactMarkdown` takes `{ punctuation: true }` to enable it.
 - Add a compact safety check (`mdPromptPack.compactValidation`: `warn`, `block`, `off`) that verifies code blocks, headings, inline code, URLs and list item counts are unchanged; details go to the "MD Prompt Pack" output channel.
 - Show approximate token counts before and after compaction (`mdPromptPack.showTokenStats`), per file and per folder.
 - Fix: repeated spaces inside inline code are no longer collapsed.

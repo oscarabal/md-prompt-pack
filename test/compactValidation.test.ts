@@ -41,6 +41,7 @@ const SAMPLE = [
 
 test("validation passes for the compact output of a mixed document", () => {
   assert.deepStrictEqual(validateCompact(SAMPLE, toCompactMarkdown(SAMPLE)), []);
+  assert.deepStrictEqual(validateCompact(SAMPLE, toCompactMarkdown(SAMPLE, { punctuation: true })), []);
 });
 
 test("validation detects changed code blocks", () => {

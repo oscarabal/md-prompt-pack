@@ -10,6 +10,7 @@ export interface MdPromptPackConfiguration {
   excludeGeneratedFiles: boolean;
   compactValidation: "off" | "warn" | "block";
   showTokenStats: boolean;
+  compactPunctuation: boolean;
 }
 
 export function getConfiguration(): MdPromptPackConfiguration {
@@ -21,7 +22,8 @@ export function getConfiguration(): MdPromptPackConfiguration {
     overwrite: config.get<boolean>("overwrite", true),
     excludeGeneratedFiles: config.get<boolean>("excludeGeneratedFiles", true),
     compactValidation: config.get<"off" | "warn" | "block">("compactValidation", "warn"),
-    showTokenStats: config.get<boolean>("showTokenStats", true)
+    showTokenStats: config.get<boolean>("showTokenStats", true),
+    compactPunctuation: config.get<boolean>("compactPunctuation", false)
   };
 }
 

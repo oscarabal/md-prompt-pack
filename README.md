@@ -116,9 +116,19 @@ Transformations applied (YAML frontmatter is preserved verbatim; code fence cont
 - Forces a blank line before critical section headings: `Hard Rules`, `Required Inputs`, `Output Template`, `Critical Rules`, `Important`
 - Removes tabs; normalizes multiple spaces to single spaces
 
-### Punctuation compaction
+### Punctuation compaction (optional)
 
-Applied outside real code fences; inline code spans are always protected:
+Disabled by default. Enable it with:
+
+```json
+{
+  "mdPromptPack.compactPunctuation": true
+}
+```
+
+These rules save characters but rarely tokens (BPE tokenizers usually merge a space with the next word), and they can change meaning: `x - 1` → `x-1`, `key: value` → `key:value` (no longer valid YAML), and `- [ ]` → `- []` (no longer a GFM task list item). Link spacing (`[ text ]( url )` → `[text](url)`) is always compacted, since it only removes whitespace.
+
+When enabled, applied outside real code fences; inline code spans and bare URLs are always protected:
 
 - Removes spaces after commas: `a, b` → `a,b`
 - Removes spaces after semicolons: `a; b` → `a;b`
@@ -127,10 +137,11 @@ Applied outside real code fences; inline code spans are always protected:
 - Does not compact connectors preceded by `*` (bold/italic markers): `**LCP** — render` is left unchanged
 - Does not compact list marker dashes (no word before the `-`)
 - Removes space after `:` when followed by a word, `{`, or `"`: `Default: all` → `Default:all`, `key: "value"` → `key:"value"`
-- Compacts Markdown links by removing extra spaces inside brackets and parentheses
-- Collapses empty checkbox brackets: `[ ]` → `[]`; normalizes checked boxes to `[x]`
+- Collapses empty checkbox brackets: `[ ]` → `[]`
 
 ### Structure
+
+- Compacts Markdown links by removing extra spaces inside brackets and parentheses
 
 - Preserves trailing spaces at end of lines (removed everywhere including inside code fences, except double-space hard line breaks inside `md`/`markdown` fences)
 - Normalizes nested list indentation to the parent's content column (2 spaces under `- `, 3 under `1. `, 4 under `10. `), so nesting stays valid CommonMark
@@ -156,7 +167,7 @@ Inside protected blocks:
 - No blank forced if heading is the first line after the open tag or the last line before the close tag
 - Uniform base indentation is removed while preserving relative indentation
 - Tables compacted; list indentation normalized (first-level preserved, children aligned to the parent's content column)
-- Commas, word connectors, colons, links, and checkbox brackets compacted (same rules as outside)
+- Links compacted; with `compactPunctuation` enabled, commas, word connectors and checkbox brackets too (same rules as outside)
 - Trailing spaces trimmed
 
 ### Example
@@ -184,14 +195,13 @@ Becomes:
 
 Text with extra spacing.
 
-|Command|Description|
-|--|--|
-|Run|Execute|
+|Command|Description
+|--|--
+|Run|Execute
 
 - item
   - child
-
-- [] pending task
+- [ ] pending task
 - [x] done task
 ```
 

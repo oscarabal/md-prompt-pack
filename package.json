@@ -128,6 +128,11 @@
           "default": "warn",
           "description": "Check that compaction kept code blocks, headings, inline code, link URLs and list items unchanged."
         },
+        "mdPromptPack.compactPunctuation": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Apply aggressive punctuation rules in compact mode: remove spaces after `,` `;` `:`, around `/` and around word connectors (`-` `+` `<` `>` `→` `—`), and collapse `[ ]` to `[]`. They save characters but rarely tokens, and can change meaning (`x - 1` → `x-1`, `key: value` → `key:value`, `- []` is no longer a task list item)."
+        },
         "mdPromptPack.showTokenStats": {
           "type": "boolean",
           "default": true,
