@@ -6,6 +6,7 @@ import {
   normalizeLineEndings,
   parseFenceOpen,
   removeHtmlComments,
+  tryMinifyJson,
 } from "./markdownTransform";
 
 /**
@@ -65,6 +66,7 @@ function extractFacts(markdown: string): MarkdownFacts {
   const commentState = { inComment: false };
   let fence: FenceInfo | null = null;
   let fenceIsMarkdown = false;
+  let fenceIsJson = false;
   let fenceLines: string[] = [];
   let start = 0;
 
@@ -76,7 +78,10 @@ function extractFacts(markdown: string): MarkdownFacts {
   }
 
   const closeFence = (): void => {
-    facts.codeBlocks.push(fenceIsMarkdown ? MARKDOWN_FENCE_PLACEHOLDER : normalizeCode(fenceLines));
+    // Valid JSON is compared without insignificant whitespace, so minified JSON still matches,
+    // while any change inside strings, numbers or keys is reported.
+    const json = fenceIsJson ? tryMinifyJson(fenceLines.join("\n")) : null;
+    facts.codeBlocks.push(fenceIsMarkdown ? MARKDOWN_FENCE_PLACEHOLDER : json ?? normalizeCode(fenceLines));
     fence = null;
     fenceLines = [];
   };
@@ -97,6 +102,7 @@ function extractFacts(markdown: string): MarkdownFacts {
     if (opened !== null) {
       fence = opened;
       fenceIsMarkdown = isMarkdownFenceLanguage(getFenceLanguage(line));
+      fenceIsJson = getFenceLanguage(line) === "json";
       fenceLines = [];
       continue;
     }

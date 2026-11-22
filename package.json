@@ -146,6 +146,11 @@
           "default": "readable",
           "description": "Blank line policy in compact mode."
         },
+        "mdPromptPack.minifyJsonFences": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Minify ` ```json ` code fences that contain valid JSON by removing whitespace outside strings. Numbers, strings and key order are kept exactly. Invalid JSON (comments, `{placeholders}`, trailing commas), unclosed fences and fences inside protected blocks such as `<output_template>` are left untouched."
+        },
         "mdPromptPack.showTokenStats": {
           "type": "boolean",
           "default": true,

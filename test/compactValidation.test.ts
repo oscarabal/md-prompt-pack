@@ -102,3 +102,16 @@ test("token stats are formatted with sign and percentage", () => {
   assert.strictEqual(formatTokenStats({ before: 200, after: 150 }), "≈200 → ≈150 tokens (−25.0%)");
   assert.strictEqual(formatTokenStats({ before: 0, after: 0 }), "≈0 → ≈0 tokens (−0.0%)");
 });
+
+test("validation accepts minified JSON fences", () => {
+  const original = "```json\n{\n  \"a\": \"x  y\",\n  \"b\": [1, 2]\n}\n```\n";
+
+  assert.deepStrictEqual(validateCompact(original, toCompactMarkdown(original, { minifyJson: true })), []);
+});
+
+test("validation detects changed values inside JSON fences", () => {
+  const original = "```json\n{\n  \"a\": \"x  y\"\n}\n```\n";
+
+  assert.strictEqual(validateCompact(original, "```json\n{\"a\":\"x y\"}\n```\n")[0]?.kind, "codeBlock");
+  assert.strictEqual(validateCompact(original, "```json\n{\"a\":\"x  y\",\"b\":1}\n```\n")[0]?.kind, "codeBlock");
+});

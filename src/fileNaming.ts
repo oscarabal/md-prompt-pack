@@ -12,6 +12,7 @@ export interface MdPromptPackConfiguration {
   showTokenStats: boolean;
   compactPunctuation: boolean;
   compactBlankLines: "readable" | "minimal";
+  minifyJsonFences: boolean;
 }
 
 export function getConfiguration(): MdPromptPackConfiguration {
@@ -25,7 +26,8 @@ export function getConfiguration(): MdPromptPackConfiguration {
     compactValidation: config.get<"off" | "warn" | "block">("compactValidation", "warn"),
     showTokenStats: config.get<boolean>("showTokenStats", true),
     compactPunctuation: config.get<boolean>("compactPunctuation", false),
-    compactBlankLines: config.get<"readable" | "minimal">("compactBlankLines", "readable")
+    compactBlankLines: config.get<"readable" | "minimal">("compactBlankLines", "readable"),
+    minifyJsonFences: config.get<boolean>("minifyJsonFences", false)
   };
 }
 

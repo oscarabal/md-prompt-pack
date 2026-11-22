@@ -125,6 +125,24 @@ By default compact mode keeps blank lines around headings, code fences and other
 
 Most BPE tokenizers encode `\n\n` as a single token, like `\n`, so this saves characters but few tokens.
 
+### JSON minification (optional)
+
+Set `"mdPromptPack.minifyJsonFences": true` to put ` ```json ` fences on a single line:
+
+```json
+{
+  "id": 1,
+  "tags": ["x", "y"]
+}
+```
+
+becomes `{"id":1,"tags":["x","y"]}`. Indentation and line breaks in formatted JSON cost tokens on every line, so this is usually the largest saving for prompts that embed data.
+
+- Only whitespace outside strings is removed; numbers (`1.0`, big integers), strings, key order and duplicate keys are kept exactly
+- Fences that are not valid JSON are left untouched: comments (use `jsonc`), `{placeholders}`, trailing commas
+- Unclosed fences and fences inside protected blocks (`<output_template>`, `<prompt>`, ...) are left untouched, since they often show the expected output format and the model may imitate it
+- The safety check compares JSON fences without insignificant whitespace, so any change to a value is still reported
+
 ### Punctuation compaction (optional)
 
 Disabled by default. Enable it with:

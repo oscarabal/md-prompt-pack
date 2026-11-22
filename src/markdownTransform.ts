@@ -92,13 +92,23 @@ export interface CompactOptions {
    * to parse the same way (e.g. before a paragraph that follows a list, table or blockquote).
    */
   blankLines?: "readable" | "minimal";
+  /**
+   * Minify ```json fences that contain valid JSON by removing whitespace outside strings.
+   * Invalid JSON (comments, placeholders, trailing commas) and fences inside protected blocks
+   * are left untouched. Default: false.
+   */
+  minifyJson?: boolean;
 }
 
-let activeOptions: Required<CompactOptions> = { punctuation: false, blankLines: "readable" };
+let activeOptions: Required<CompactOptions> = { punctuation: false, blankLines: "readable", minifyJson: false };
 
 export function toCompactMarkdown(markdown: string, options: CompactOptions = {}): string {
   const previousOptions = activeOptions;
-  activeOptions = { punctuation: options.punctuation ?? false, blankLines: options.blankLines ?? "readable" };
+  activeOptions = {
+    punctuation: options.punctuation ?? false,
+    blankLines: options.blankLines ?? "readable",
+    minifyJson: options.minifyJson ?? false,
+  };
   try {
     return compactMarkdownDocument(markdown);
   } finally {
@@ -245,6 +255,20 @@ function compactMarkdownDocument(markdown: string): string {
         }
         fenceLanguage = "";
         continue;
+      }
+
+      if (activeOptions.minifyJson && fenceLanguage === "json") {
+        const closeIndex = findFenceClose(lines, index + 1, fenceOpen);
+        const minified = closeIndex < 0 ? null : tryMinifyJson(lines.slice(index + 1, closeIndex).join("\n"));
+
+        if (minified !== null) {
+          const fenceIndent = line.slice(0, line.length - line.trimStart().length);
+          result.push(`${fenceIndent}${minified}`);
+          result.push(lines[closeIndex].trimEnd());
+          index = closeIndex;
+          fenceLanguage = "";
+          continue;
+        }
       }
 
       fence = fenceOpen;
@@ -398,6 +422,64 @@ export function parseFenceOpen(line: string): FenceInfo | null {
 export function isFenceClose(line: string, fence: FenceInfo): boolean {
   const match = line.trim().match(/^(`{3,}|~{3,})$/);
   return match !== null && match[1][0] === fence.char && match[1].length >= fence.length;
+}
+
+function findFenceClose(lines: string[], fromIndex: number, fence: FenceInfo): number {
+  for (let index = fromIndex; index < lines.length; index++) {
+    if (isFenceClose(lines[index], fence)) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+/** Returns the minified JSON, or null when the text is empty or not valid JSON. */
+export function tryMinifyJson(text: string): string | null {
+  if (text.trim() === "") {
+    return null;
+  }
+
+  try {
+    JSON.parse(text);
+  } catch {
+    return null;
+  }
+
+  return minifyJsonText(text);
+}
+
+/**
+ * Removes whitespace outside JSON strings. Unlike JSON.stringify(JSON.parse(text)), it keeps
+ * numbers (`1.0`, big integers), key order and duplicate keys exactly as written.
+ */
+function minifyJsonText(text: string): string {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+
+  for (const char of text) {
+    if (inString) {
+      output += char;
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      output += char;
+    } else if (!/\s/.test(char)) {
+      output += char;
+    }
+  }
+
+  return output;
 }
 
 /** Advances fence state for one line. `delimiter` is true when the line opens or closes a fence. */

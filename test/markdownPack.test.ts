@@ -1044,3 +1044,61 @@ test("minimal blank lines is idempotent", () => {
 
   assert.strictEqual(toMinimal(once), once);
 });
+
+// --- Optional JSON fence minification ---
+
+const toMinifiedJson = (markdown: string): string => compactMarkdown(markdown, { minifyJson: true });
+
+test("json fences are left formatted by default", () => {
+  const input = "```json\n{\n  \"a\": 1\n}\n```\n";
+
+  assert.strictEqual(compactMarkdown(input), input);
+});
+
+test("json fences are minified when enabled", () => {
+  const input = "```json\n{\n  \"id\": 1,\n  \"tags\": [\"x\", \"y\"],\n  \"nested\": { \"ok\": true }\n}\n```\n";
+
+  assert.strictEqual(toMinifiedJson(input), "```json\n{\"id\":1,\"tags\":[\"x\",\"y\"],\"nested\":{\"ok\":true}}\n```\n");
+});
+
+test("json minification keeps strings, numbers, key order and duplicate keys exactly", () => {
+  const input = "```json\n{ \"b\": 1.0, \"a\": 12345678901234567890, \"s\": \"a  b \\\" c \\\\\", \"a\": null }\n```\n";
+
+  assert.strictEqual(
+    toMinifiedJson(input),
+    "```json\n{\"b\":1.0,\"a\":12345678901234567890,\"s\":\"a  b \\\" c \\\\\",\"a\":null}\n```\n",
+  );
+});
+
+test("json minification leaves invalid JSON untouched", () => {
+  for (const body of ["{\"a\": {valor}}", "{\n  // comment\n  \"a\": 1\n}", "{\"a\": 1,}", ""]) {
+    const input = `\`\`\`json\n${body}\n\`\`\`\n`;
+    assert.strictEqual(toMinifiedJson(input), compactMarkdown(input), body);
+  }
+});
+
+test("json minification only applies to json fences", () => {
+  const input = "```jsonc\n{\n  \"a\": 1\n}\n```\n```js\nconst a = {\n  b: 1\n};\n```\n";
+
+  assert.strictEqual(toMinifiedJson(input), input);
+});
+
+test("json minification keeps the fence indentation inside list items", () => {
+  const input = "- item\n\n  ```json\n  [\n    1,\n    2\n  ]\n  ```\n";
+
+  assert.strictEqual(toMinifiedJson(input), "- item\n\n  ```json\n  [1,2]\n  ```\n");
+});
+
+test("json minification leaves unclosed fences and protected blocks untouched", () => {
+  const unclosed = "```json\n{\n  \"a\": 1\n}\n";
+  const protectedBlock = "<output_template>\n```json\n{\n  \"a\": 1\n}\n```\n</output_template>\n";
+
+  assert.strictEqual(toMinifiedJson(unclosed), unclosed);
+  assert.strictEqual(toMinifiedJson(protectedBlock), protectedBlock);
+});
+
+test("json minification is idempotent", () => {
+  const once = toMinifiedJson("Text\n\n```json\n{\n  \"a\": [1, 2]\n}\n```\n");
+
+  assert.strictEqual(toMinifiedJson(once), once);
+});
