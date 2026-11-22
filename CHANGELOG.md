@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `mdPromptPack.minifyJsonFences` (default false) and the `minifyJson` option on `toCompactMarkdown`: valid ` ```json ` fences are minified by removing whitespace outside strings. The safety check compares JSON fences without insignificant whitespace.
+- Add `mdPromptPack.compactBlankLines` (`readable` default, `minimal`) and the `blankLines` option on `toCompactMarkdown`. `minimal` keeps only the blank lines Markdown needs to parse the same way.
 - **Behavior change:** punctuation compaction is now optional and disabled by default (`mdPromptPack.compactPunctuation`). This covers spaces after `,` `;` `:`, around `/` and word connectors, and `[ ]` → `[]`. `toCompactMarkdown` takes `{ punctuation: true }` to enable it.
 - Add a compact safety check (`mdPromptPack.compactValidation`: `warn`, `block`, `off`) that verifies code blocks, headings, inline code, URLs and list item counts are unchanged; details go to the "MD Prompt Pack" output channel.
 - Show approximate token counts before and after compaction (`mdPromptPack.showTokenStats`), per file and per folder.

@@ -133,6 +133,24 @@
           "default": false,
           "markdownDescription": "Apply aggressive punctuation rules in compact mode: remove spaces after `,` `;` `:`, around `/` and around word connectors (`-` `+` `<` `>` `→` `—`), and collapse `[ ]` to `[]`. They save characters but rarely tokens, and can change meaning (`x - 1` → `x-1`, `key: value` → `key:value`, `- []` is no longer a task list item)."
         },
+        "mdPromptPack.compactBlankLines": {
+          "type": "string",
+          "enum": [
+            "readable",
+            "minimal"
+          ],
+          "enumDescriptions": [
+            "Keep blank lines around headings, code fences and other semantic blocks.",
+            "Keep only the blank lines Markdown needs to parse the same way."
+          ],
+          "default": "readable",
+          "description": "Blank line policy in compact mode."
+        },
+        "mdPromptPack.minifyJsonFences": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Minify ` ```json ` code fences that contain valid JSON by removing whitespace outside strings. Numbers, strings and key order are kept exactly. Invalid JSON (comments, `{placeholders}`, trailing commas), unclosed fences and fences inside protected blocks such as `<output_template>` are left untouched."
+        },
         "mdPromptPack.showTokenStats": {
           "type": "boolean",
           "default": true,

@@ -991,3 +991,114 @@ test("compact markdown leaves punctuation alone inside protected blocks by defau
   assert.strictEqual(compactMarkdown(input), input);
   assert.strictEqual(compactMarkdown(input, { punctuation: true }), "<prompt>\na,b-c\n</prompt>\n");
 });
+
+// --- Minimal blank lines (optional) ---
+
+const toMinimal = (markdown: string): string => compactMarkdown(markdown, { blankLines: "minimal" });
+
+test("minimal blank lines removes blanks around headings and fences", () => {
+  const input = "# Title\n\nIntro text.\n\n## Section\n\n- item\n- item\n\n### Sub\n\nText.\n\n```js\nconst a = 1;\n\nconst b = 2;\n```\n\nAfter.\n";
+
+  assert.strictEqual(
+    toMinimal(input),
+    "# Title\nIntro text.\n## Section\n- item\n- item\n### Sub\nText.\n```js\nconst a = 1;\n\nconst b = 2;\n```\nAfter.\n",
+  );
+});
+
+test("minimal blank lines keeps blanks that end lists, tables and blockquotes before text", () => {
+  const input = "- item\n\nText after list.\n\n|A|B|\n|--|--|\n|1|2|\n\nText after table.\n\n> quote\n\nText after quote.\n";
+
+  assert.strictEqual(toMinimal(input), "- item\n\nText after list.\n\n|A|B\n|--|--\n|1|2\n\nText after table.\n> quote\n\nText after quote.\n");
+});
+
+test("minimal blank lines keeps blanks that stop setext headings and table headers", () => {
+  const input = "Paragraph.\n\n---\n\nParagraph.\n\n|A|B|\n|--|--|\n";
+
+  assert.strictEqual(toMinimal(input), "Paragraph.\n\n---\nParagraph.\n\n|A|B\n|--|--\n");
+});
+
+test("minimal blank lines keeps list structure and continuation paragraphs", () => {
+  const input = "1. step\n   - child\n\n   continuation\n2. next\n\n## Heading\n";
+
+  assert.strictEqual(toMinimal(input), "1. step\n   - child\n\n   continuation\n2. next\n## Heading\n");
+});
+
+test("minimal blank lines keeps the blank after an XML-like close tag", () => {
+  const input = "<prompt>\nText.\n\n## Inside\n\nMore.\n</prompt>\n\n## After\n";
+
+  assert.strictEqual(toMinimal(input), "<prompt>\nText.\n## Inside\nMore.\n</prompt>\n\n## After\n");
+});
+
+test("minimal blank lines keeps the blank before indented code after a paragraph", () => {
+  assert.strictEqual(toMinimal("Text.\n\n    code\n"), "Text.\n\n    code\n");
+  assert.strictEqual(toMinimal("## H\n\n    code\n"), "## H\n    code\n");
+});
+
+test("minimal blank lines removes critical heading spacing", () => {
+  assert.strictEqual(toMinimal("Text.\n\n## Hard Rules\n\n- rule\n"), "Text.\n## Hard Rules\n- rule\n");
+});
+
+test("minimal blank lines is idempotent", () => {
+  const input = "# T\n\n- a\n\nText\n\n|A|\n|--|\n\nMore\n\n> q\n\nEnd\n\n    code\n\n<task>\nx\n</task>\n\n## H\n";
+  const once = toMinimal(input);
+
+  assert.strictEqual(toMinimal(once), once);
+});
+
+// --- Optional JSON fence minification ---
+
+const toMinifiedJson = (markdown: string): string => compactMarkdown(markdown, { minifyJson: true });
+
+test("json fences are left formatted by default", () => {
+  const input = "```json\n{\n  \"a\": 1\n}\n```\n";
+
+  assert.strictEqual(compactMarkdown(input), input);
+});
+
+test("json fences are minified when enabled", () => {
+  const input = "```json\n{\n  \"id\": 1,\n  \"tags\": [\"x\", \"y\"],\n  \"nested\": { \"ok\": true }\n}\n```\n";
+
+  assert.strictEqual(toMinifiedJson(input), "```json\n{\"id\":1,\"tags\":[\"x\",\"y\"],\"nested\":{\"ok\":true}}\n```\n");
+});
+
+test("json minification keeps strings, numbers, key order and duplicate keys exactly", () => {
+  const input = "```json\n{ \"b\": 1.0, \"a\": 12345678901234567890, \"s\": \"a  b \\\" c \\\\\", \"a\": null }\n```\n";
+
+  assert.strictEqual(
+    toMinifiedJson(input),
+    "```json\n{\"b\":1.0,\"a\":12345678901234567890,\"s\":\"a  b \\\" c \\\\\",\"a\":null}\n```\n",
+  );
+});
+
+test("json minification leaves invalid JSON untouched", () => {
+  for (const body of ["{\"a\": {valor}}", "{\n  // comment\n  \"a\": 1\n}", "{\"a\": 1,}", ""]) {
+    const input = `\`\`\`json\n${body}\n\`\`\`\n`;
+    assert.strictEqual(toMinifiedJson(input), compactMarkdown(input), body);
+  }
+});
+
+test("json minification only applies to json fences", () => {
+  const input = "```jsonc\n{\n  \"a\": 1\n}\n```\n```js\nconst a = {\n  b: 1\n};\n```\n";
+
+  assert.strictEqual(toMinifiedJson(input), input);
+});
+
+test("json minification keeps the fence indentation inside list items", () => {
+  const input = "- item\n\n  ```json\n  [\n    1,\n    2\n  ]\n  ```\n";
+
+  assert.strictEqual(toMinifiedJson(input), "- item\n\n  ```json\n  [1,2]\n  ```\n");
+});
+
+test("json minification leaves unclosed fences and protected blocks untouched", () => {
+  const unclosed = "```json\n{\n  \"a\": 1\n}\n";
+  const protectedBlock = "<output_template>\n```json\n{\n  \"a\": 1\n}\n```\n</output_template>\n";
+
+  assert.strictEqual(toMinifiedJson(unclosed), unclosed);
+  assert.strictEqual(toMinifiedJson(protectedBlock), protectedBlock);
+});
+
+test("json minification is idempotent", () => {
+  const once = toMinifiedJson("Text\n\n```json\n{\n  \"a\": [1, 2]\n}\n```\n");
+
+  assert.strictEqual(toMinifiedJson(once), once);
+});

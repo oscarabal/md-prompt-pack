@@ -121,7 +121,11 @@ export async function generateCompactForFolder(uri: vscode.Uri | undefined): Pro
 
 async function generateCompact(input: vscode.Uri, original: string): Promise<CompactResult> {
   const config = getConfiguration();
-  const compact = toCompactMarkdown(original, { punctuation: config.compactPunctuation });
+  const compact = toCompactMarkdown(original, {
+    punctuation: config.compactPunctuation,
+    blankLines: config.compactBlankLines,
+    minifyJson: config.minifyJsonFences
+  });
   const issues = config.compactValidation === "off" ? [] : validateCompact(original, compact);
   const stats = { before: estimateTokens(original), after: estimateTokens(compact) };
 
