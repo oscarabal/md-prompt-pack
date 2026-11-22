@@ -1,25 +1,33 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
 
-- Add `mdPromptPack.minifyJsonFences` (default false) and the `minifyJson` option on `toCompactMarkdown`: valid ` ```json ` fences are minified by removing whitespace outside strings. The safety check compares JSON fences without insignificant whitespace.
-- Add `mdPromptPack.compactBlankLines` (`readable` default, `minimal`) and the `blankLines` option on `toCompactMarkdown`. `minimal` keeps only the blank lines Markdown needs to parse the same way.
-- **Behavior change:** punctuation compaction is now optional and disabled by default (`mdPromptPack.compactPunctuation`). This covers spaces after `,` `;` `:`, around `/` and word connectors, and `[ ]` → `[]`. `toCompactMarkdown` takes `{ punctuation: true }` to enable it.
-- Add a compact safety check (`mdPromptPack.compactValidation`: `warn`, `block`, `off`) that verifies code blocks, headings, inline code, URLs and list item counts are unchanged; details go to the "MD Prompt Pack" output channel.
-- Show approximate token counts before and after compaction (`mdPromptPack.showTokenStats`), per file and per folder.
-- Fix: repeated spaces inside inline code are no longer collapsed.
-- Fix: text after a bare URL followed by `,`, `;` or `:` is no longer glued to the URL.
-- Fix: `a: / b` style spacing no longer creates URLs such as `http://x` from `http: //x`.
-- Fix: starred thematic breaks (`* * *`) are no longer turned into list items.
-- Fix: escaped pipes (`\|`) inside table cells are no longer treated as cell separators.
-- Fix: code fences inside protected blocks (`<prompt>`, `<task>`, ...) are no longer compacted.
-- Fix: indented code blocks are preserved verbatim instead of being flattened and compacted.
-- Fix: code fences now match opening character and length; nested and mixed fences no longer flip fence state.
-- Fix: thematic breaks inside code fences are no longer removed (compact and human modes).
-- Fix: unclosed `md` fences no longer drop their content; closing fences no longer get a blank line inserted before them.
-- Fix: list nesting uses the parent's content column (3 spaces under `1. `), so ordered-list children stay nested.
-- Fix: indented continuation paragraphs stay inside their list item; ordered list items with `)` are recognized.
-- Fix: HTML comments inside inline code spans are kept.
+### Changed
+
+- **Behavior change:** punctuation compaction is now optional and disabled by default (`mdPromptPack.compactPunctuation`). This covers spaces after `,` `;` `:`, around `/` and word connectors, and `[ ]` → `[]`. `toCompactMarkdown` takes `{ punctuation: true }` to enable it. Regenerated `.compact.md` files will be slightly larger with the default settings.
+
+### Added
+
+- Compact safety check (`mdPromptPack.compactValidation`: `warn`, `block`, `off`) that verifies code blocks, headings, inline code, URLs and list item counts are unchanged; details go to the "MD Prompt Pack" output channel.
+- Approximate token counts before and after compaction (`mdPromptPack.showTokenStats`), per file and per folder.
+- Optional minimal blank lines (`mdPromptPack.compactBlankLines`: `readable` default, `minimal`; `blankLines` option on `toCompactMarkdown`). `minimal` keeps only the blank lines Markdown needs to parse the same way.
+- Optional JSON fence minification (`mdPromptPack.minifyJsonFences`, default false; `minifyJson` option on `toCompactMarkdown`): valid ` ```json ` fences are minified by removing whitespace outside strings. The safety check compares JSON fences without insignificant whitespace.
+
+### Fixed
+
+- Code fences inside protected blocks (`<prompt>`, `<task>`, ...) are no longer compacted.
+- Indented code blocks are preserved verbatim instead of being flattened and compacted.
+- Code fences now match opening character and length; nested and mixed fences no longer flip fence state.
+- Thematic breaks inside code fences are no longer removed (compact and human modes).
+- Unclosed `md` fences no longer drop their content; closing fences no longer get a blank line inserted before them.
+- List nesting uses the parent's content column (3 spaces under `1. `), so ordered-list children stay nested.
+- Indented continuation paragraphs stay inside their list item; ordered list items with `)` are recognized.
+- HTML comments inside inline code spans are kept.
+- Repeated spaces inside inline code are no longer collapsed.
+- Text after a bare URL followed by `,`, `;` or `:` is no longer glued to the URL.
+- `a: / b` style spacing no longer creates URLs such as `http://x` from `http: //x`.
+- Starred thematic breaks (`* * *`) are no longer turned into list items.
+- Escaped pipes (`\|`) inside table cells are no longer treated as cell separators.
 
 ## 0.0.19
 
