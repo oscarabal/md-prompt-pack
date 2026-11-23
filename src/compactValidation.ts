@@ -3,9 +3,11 @@ import {
   getFenceLanguage,
   isFenceClose,
   isMarkdownFenceLanguage,
+  isSetextTitleLine,
   normalizeLineEndings,
   parseFenceOpen,
   removeHtmlComments,
+  setextUnderlineLevel,
   tryMinifyJson,
 } from "./markdownTransform";
 
@@ -116,6 +118,17 @@ function extractFacts(markdown: string): MarkdownFacts {
     const heading = content.match(/^(#{1,6})\s+(.*)$/);
     if (heading !== null) {
       facts.headings.push(`${heading[1]} ${heading[2].replace(/\s+/g, "")}`);
+    }
+
+    // Setext headings (`Title` + `---`) are compacted to `## Title`, so count them as headings.
+    const underlineLevel = index + 1 < lines.length ? setextUnderlineLevel(lines[index + 1]) : null;
+    const previousLine = index > start ? lines[index - 1] : "";
+    if (
+      underlineLevel !== null &&
+      isSetextTitleLine(text) &&
+      (previousLine.trim() === "" || /^#{1,6}\s/.test(previousLine.trim()))
+    ) {
+      facts.headings.push(`${"#".repeat(underlineLevel)} ${content.replace(/\s+/g, "")}`);
     }
 
     if (/^(?:[-*+]|\d{1,9}[.)])\s+/.test(content) && !/^([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(content)) {

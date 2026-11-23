@@ -98,9 +98,21 @@ export interface CompactOptions {
    * are left untouched. Default: false.
    */
   minifyJson?: boolean;
+  /**
+   * Join hard-wrapped paragraph lines into one line (a soft line break renders as a space).
+   * Only joins when the first line is at least 40 characters and does not end a sentence
+   * (`.` `!` `?` `:` `;`), so one-instruction-per-line prompts keep their line structure.
+   * Lists, tables, headings, quotes, HTML and code are never joined. Default: false.
+   */
+  joinWrappedLines?: boolean;
 }
 
-let activeOptions: Required<CompactOptions> = { punctuation: false, blankLines: "readable", minifyJson: false };
+let activeOptions: Required<CompactOptions> = {
+  punctuation: false,
+  blankLines: "readable",
+  minifyJson: false,
+  joinWrappedLines: false,
+};
 
 export function toCompactMarkdown(markdown: string, options: CompactOptions = {}): string {
   const previousOptions = activeOptions;
@@ -108,6 +120,7 @@ export function toCompactMarkdown(markdown: string, options: CompactOptions = {}
     punctuation: options.punctuation ?? false,
     blankLines: options.blankLines ?? "readable",
     minifyJson: options.minifyJson ?? false,
+    joinWrappedLines: options.joinWrappedLines ?? false,
   };
   try {
     return compactMarkdownDocument(markdown);
@@ -156,7 +169,10 @@ function compactMarkdownDocument(markdown: string): string {
     const protectedTag = fence === null && !inProtectedBlock ? getProtectedBlockOpenTag(line, lines, index) : "";
     if (protectedTag !== "") {
       listContext.length = 0;
-      if (result.length > 0 && (blankPending || isListItemLine(result[result.length - 1]))) {
+      if (
+        result.length > 0 &&
+        (blankPending || (activeOptions.blankLines === "readable" && isListItemLine(result[result.length - 1])))
+      ) {
         result.push("");
       }
       blankPending = false;
@@ -322,6 +338,35 @@ function compactMarkdownDocument(markdown: string): string {
       continue;
     }
 
+    const underlineLevel = index + 1 < lines.length ? setextUnderlineLevel(lines[index + 1]) : null;
+    if (
+      underlineLevel !== null &&
+      isSetextTitleLine(cleaned) &&
+      (result.length === 0 || blankPending || isHeadingLine(result[result.length - 1]))
+    ) {
+      // Setext heading: `Title` + `---` becomes `## Title`. It saves a line and, unlike the
+      // underline, survives the removal of the blank line above.
+      const heading = `${"#".repeat(underlineLevel)} ${cleaned}`;
+      if (result.length > 0 && shouldKeepBlankBefore(heading, result[result.length - 1], blankPending)) {
+        result.push("");
+      }
+
+      blankPending = false;
+      result.push(heading);
+      index++;
+      continue;
+    }
+
+    if (
+      activeOptions.joinWrappedLines &&
+      !blankPending &&
+      result.length > 0 &&
+      canJoinWrappedLine(result[result.length - 1], cleaned)
+    ) {
+      result[result.length - 1] = `${result[result.length - 1]} ${cleaned}`;
+      continue;
+    }
+
     if (result.length > 0 && shouldKeepBlankBefore(cleaned, result[result.length - 1], blankPending)) {
       result.push("");
     }
@@ -359,7 +404,9 @@ function removeThematicBreaksBeforeHeadings(lines: string[]): string[] {
       continue;
     }
 
-    if (isThematicBreakLine(lines[index])) {
+    // `---` under a text line is a setext heading underline, not a separator.
+    const underlinesTitle = index > 0 && isSetextTitleLine(lines[index - 1]);
+    if (isThematicBreakLine(lines[index]) && !underlinesTitle) {
       let next = index + 1;
       while (next < lines.length && lines[next].trim() === "") {
         next++;
@@ -1240,6 +1287,11 @@ function needsBlankBefore(current: string, previous: string, blankPending: boole
     return blankPending;
   }
 
+  // Minimal mode only keeps a blank the source already had; it never adds one.
+  if (!blankPending) {
+    return false;
+  }
+
   const previousInList = isListItemLine(previous) || isListContinuationLine(previous);
   const currentCanBeAbsorbed = isParagraphTextLine(current) || isTableLine(current) || isXmlTagLine(current);
 
@@ -1257,8 +1309,9 @@ function needsBlankBefore(current: string, previous: string, blankPending: boole
     return true;
   }
 
-  if (!blankPending) {
-    return false;
+  // A link reference definition cannot interrupt a paragraph; without the blank it becomes text.
+  if (isLinkReferenceDefinition(current) && isParagraphTextLine(previous)) {
+    return true;
   }
 
   // An HTML block (started by a tag line) runs until a blank line, so keep the blank that ends it.
@@ -1273,6 +1326,53 @@ function needsBlankBefore(current: string, previous: string, blankPending: boole
 
   // XML-like tags start HTML blocks, which cannot interrupt a paragraph and run until a blank line.
   return isXmlTagLine(current) && isParagraphTextLine(previous);
+}
+
+/** Level of a setext heading underline (`===` is 1, `---` is 2), or null when the line is not one. */
+export function setextUnderlineLevel(line: string): 1 | 2 | null {
+  if (/^ {0,3}=+\s*$/.test(line)) {
+    return 1;
+  }
+
+  return /^ {0,3}-{2,}\s*$/.test(line) ? 2 : null;
+}
+
+/** A single unindented text line that can be the title of a setext heading. */
+export function isSetextTitleLine(line: string): boolean {
+  const content = line.trimEnd();
+  return content.trim() !== "" && isPlainJoinableLine(content) && setextUnderlineLevel(content) === null;
+}
+
+function isLinkReferenceDefinition(line: string): boolean {
+  return /^ {0,3}\[[^\]]+\]:\s/.test(line);
+}
+
+const MIN_WRAPPED_LINE_LENGTH = 40;
+
+/** A line that is plain paragraph text with no indentation, HTML, reference or extension syntax. */
+function isPlainJoinableLine(line: string): boolean {
+  return (
+    isParagraphTextLine(line) &&
+    !/^\s/.test(line) &&
+    !/^[<:$=]/.test(line) &&
+    !isLinkReferenceDefinition(line) &&
+    !/^-+$/.test(line)
+  );
+}
+
+/**
+ * True when `current` is the continuation of a hard-wrapped paragraph line: both are plain text,
+ * the previous line is long enough to look wrapped, and it does not end a sentence or a hard break.
+ */
+function canJoinWrappedLine(previous: string, current: string): boolean {
+  return (
+    previous.length >= MIN_WRAPPED_LINE_LENGTH &&
+    isPlainJoinableLine(previous) &&
+    isPlainJoinableLine(current) &&
+    !/[.!?:;\\]$/.test(previous) &&
+    // An unclosed inline code span continues on the next line: leave it as written.
+    (previous.match(/`/g)?.length ?? 0) % 2 === 0
+  );
 }
 
 function isTableLine(line: string): boolean {
