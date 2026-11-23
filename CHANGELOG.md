@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Behavior change:** `mdPromptPack.compactBlankLines` now defaults to `minimal`. With `readable`, dense sources (prompts, changelogs) could produce a compact file with more lines than the source. The `toCompactMarkdown` API default is unchanged (`readable`).
+- `minimal` never adds a blank line the source did not have (before it added one after a list, table or quote followed by text).
+- Setext headings (`Title` + `---`/`===`) are converted to `#`/`##` in compact mode and counted as headings by the safety check.
+
+### Added
+
+- Optional `mdPromptPack.joinWrappedLines` (default false; `joinWrappedLines` option on `toCompactMarkdown`): joins hand-wrapped paragraph lines.
+
+### Fixed
+
+- A setext underline (`---`) followed by a heading was removed as a thematic break, so the title stopped being a heading.
+- `minimal` keeps the blank line before a link reference definition that follows a paragraph (otherwise it becomes text).
+
 ## 0.1.0
 
 ### Changed

@@ -107,23 +107,32 @@ Transformations applied (YAML frontmatter is preserved verbatim; code fence cont
 
 ### Blank lines and spacing
 
-- Removes repeated blank lines unless they separate semantic blocks
-- Preserves one blank line before headings and after H1/H2 headings, code fences, tables, blockquotes, and thematic breaks
-- Forces a blank line before headings unless the previous line is an XML-like open tag
-- Keeps a blank line after H1/H2 headings; H3 and deeper headings start content on the next line without an extra blank
-- Removes blank lines after XML-like open tags (`<TASK>`, `<context>`, `<instructions>`, etc.)
-- Removes thematic breaks (`---`) when the next non-blank line is a heading
-- Forces a blank line before critical section headings: `Hard Rules`, `Required Inputs`, `Output Template`, `Critical Rules`, `Important`
-- Removes tabs; normalizes multiple spaces to single spaces
+`mdPromptPack.compactBlankLines` chooses the policy. The default is `minimal`: the compact file never has more lines than the source, because it only keeps blank lines the source already had and Markdown needs to parse the same way.
 
-### Minimal blank lines (optional)
-
-By default compact mode keeps blank lines around headings, code fences and other semantic blocks for readability. Set `"mdPromptPack.compactBlankLines": "minimal"` to keep only the blank lines Markdown needs to parse the same way:
+`minimal` (default):
 
 - Removed: blank lines before and after headings (including critical headings), around code fences, before blockquotes, and after XML-like open tags
-- Kept: before paragraph text, a table or an XML-like tag that follows a list item, table row or blockquote (otherwise it would be absorbed into it); between paragraph text and a table or `---` (otherwise it becomes a table header or a setext heading); after an XML-like close tag; before an indented code block that follows a paragraph; between paragraphs inside a list item
+- Kept only if the source had them: before paragraph text, a table or an XML-like tag that follows a list item, table row or blockquote (otherwise it would be absorbed into it); between paragraph text and a table or `---` (otherwise it becomes a table header or a setext heading); before a link reference definition that follows a paragraph; after an XML-like close tag; before an indented code block that follows a paragraph; between paragraphs inside a list item
+- Never adds a blank line
 
-Most BPE tokenizers encode `\n\n` as a single token, like `\n`, so this saves characters but few tokens.
+`readable` keeps blank lines around headings, code fences and other semantic blocks, and **forces** them in some places, so a dense source can end up with more lines:
+
+- Preserves one blank line before headings and after H1/H2 headings, code fences, tables, blockquotes, and thematic breaks
+- Forces a blank line before headings unless the previous line is an XML-like open tag, and before critical section headings: `Hard Rules`, `Required Inputs`, `Output Template`, `Critical Rules`, `Important`
+- H3 and deeper headings start content on the next line without an extra blank
+
+In both policies:
+
+- Removes blank lines after XML-like open tags (`<TASK>`, `<context>`, `<instructions>`, etc.)
+- Removes thematic breaks (`---`) separated by a blank line when the next non-blank line is a heading
+- Converts setext headings (`Title` + `===` or `---`) to `#`/`##`; this saves a line and keeps the heading when the blank line above is removed
+- Removes tabs; normalizes multiple spaces to single spaces
+
+Most BPE tokenizers encode `\n\n` as a single token, like `\n`, so blank lines save lines and characters but few tokens.
+
+### Join wrapped lines (optional)
+
+Set `"mdPromptPack.joinWrappedLines": true` to join paragraph lines that were hard-wrapped by hand (a soft line break renders as a space). A line is joined with the next one only if it has at least 40 characters, does not end with `.` `!` `?` `:` `;` or `\`, and has no unclosed inline code span. Prompts with one instruction per line keep their line structure. Lists, tables, headings, quotes, HTML, code fences and indented text are never joined. Default: false.
 
 ### JSON minification (optional)
 

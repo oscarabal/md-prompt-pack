@@ -124,7 +124,8 @@ async function generateCompact(input: vscode.Uri, original: string): Promise<Com
   const compact = toCompactMarkdown(original, {
     punctuation: config.compactPunctuation,
     blankLines: config.compactBlankLines,
-    minifyJson: config.minifyJsonFences
+    minifyJson: config.minifyJsonFences,
+    joinWrappedLines: config.joinWrappedLines
   });
   const issues = config.compactValidation === "off" ? [] : validateCompact(original, compact);
   const stats = { before: estimateTokens(original), after: estimateTokens(compact) };

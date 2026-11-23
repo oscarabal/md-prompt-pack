@@ -262,7 +262,7 @@ test("compact markdown preserves blank lines around thematic breaks", () => {
 });
 
 test("compact markdown removes thematic breaks before headings", () => {
-  const input = "Text before\n---\n\n## Heading\nText after\n";
+  const input = "Text before\n\n---\n\n## Heading\nText after\n";
   const output = toCompactMarkdown(input);
 
   assert.strictEqual(output, "Text before\n\n## Heading\n\nText after\n");
@@ -586,6 +586,7 @@ test("compact markdown removes thematic breaks before headings inside markdown f
   const input = [
     "```md",
     "Text before",
+    "",
     "---",
     "## Heading",
     "Text after",
@@ -1101,4 +1102,75 @@ test("json minification is idempotent", () => {
   const once = toMinifiedJson("Text\n\n```json\n{\n  \"a\": [1, 2]\n}\n```\n");
 
   assert.strictEqual(toMinifiedJson(once), once);
+});
+
+// --- Setext headings, blank lines that never grow, wrapped lines ---
+
+test("setext headings become ATX headings and keep their level", () => {
+  assert.strictEqual(toMinimal("Intro text.\n\nExamples\n--------\n\nText.\n"), "Intro text.\n## Examples\nText.\n");
+  assert.strictEqual(toMinimal("Title\n=====\n\nText.\n"), "# Title\nText.\n");
+  assert.strictEqual(toCompactMarkdown("Title\n=====\n\nText.\n"), "# Title\n\nText.\n");
+});
+
+test("a setext underline before another heading is not removed as a thematic break", () => {
+  assert.strictEqual(toMinimal("Title\n-----\n## Next\n\nText\n"), "## Title\n## Next\nText\n");
+});
+
+test("multi-line setext titles and list lazy lines are left alone", () => {
+  assert.strictEqual(toMinimal("Line one\nline two\n---\n"), "Line one\nline two\n---\n");
+  assert.strictEqual(toMinimal("- item\ntext\n---\n"), "- item\ntext\n---\n");
+});
+
+test("minimal blank lines never adds a blank line the source did not have", () => {
+  const input = "# Role\nYou are a reviewer.\n## Hard Rules\n- a\n- b\nNote after list.\n|a|b|\n|--|--|\n|1|2|\nAfter table.\n> quote\nAfter quote.\n<task>\n## Goal\nShip it.\n</task>\nEnd.\n";
+  const output = toMinimal(input);
+
+  assert.ok(output.split("\n").length <= input.split("\n").length);
+  assert.ok(!output.includes("\n\n"));
+});
+
+test("minimal blank lines keeps the blank before a link reference definition", () => {
+  assert.strictEqual(toMinimal("See [a][x].\n\n[x]: https://example.com\n"), "See [a][x].\n\n[x]: https://example.com\n");
+});
+
+const toJoined = (markdown: string): string => compactMarkdown(markdown, { blankLines: "minimal", joinWrappedLines: true });
+
+test("joinWrappedLines joins hard-wrapped paragraph lines", () => {
+  const input = "This paragraph was wrapped by hand at about\nseventy characters per line and keeps going\nuntil it finally ends here.\n";
+
+  assert.strictEqual(
+    toJoined(input),
+    "This paragraph was wrapped by hand at about seventy characters per line and keeps going until it finally ends here.\n",
+  );
+});
+
+test("joinWrappedLines keeps one-instruction-per-line prompts and paragraph breaks", () => {
+  const prompt = "Always answer in Spanish.\nNever invent data when the source is missing.\nCite the source of every figure you use.\n";
+  const paragraphs = "First paragraph that is long enough to look wrapped\n\nSecond paragraph.\n";
+
+  assert.strictEqual(toJoined(prompt), prompt);
+  assert.strictEqual(toJoined(paragraphs), "First paragraph that is long enough to look wrapped\nSecond paragraph.\n");
+});
+
+test("joinWrappedLines never joins lists, tables, headings, HTML, quotes, code or setext titles", () => {
+  const input = "- a list item that is long enough to look wrapped\ncontinued lazily\n\n> a quote that is long enough to look wrapped\ncontinued\n\n```\na code line that is long enough to look wrapped\ncode\n```\n";
+  const output = toJoined(input);
+
+  assert.ok(output.includes("- a list item that is long enough to look wrapped\ncontinued lazily"));
+  assert.ok(output.includes("> a quote that is long enough to look wrapped\ncontinued"));
+  assert.ok(output.includes("a code line that is long enough to look wrapped\ncode"));
+});
+
+test("joinWrappedLines is off by default and idempotent", () => {
+  const input = "This paragraph was wrapped by hand at about\nseventy characters per line.\n";
+  const once = toJoined(input);
+
+  assert.strictEqual(compactMarkdown(input, { blankLines: "minimal" }), input);
+  assert.strictEqual(toJoined(once), once);
+});
+
+test("joinWrappedLines does not join across an unclosed inline code span", () => {
+  const input = "Simplest way to install it is to run `npm\ninstall xml2js` which will download everything.\n";
+
+  assert.strictEqual(toJoined(input), input);
 });

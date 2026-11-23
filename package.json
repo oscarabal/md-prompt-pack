@@ -147,13 +147,18 @@
             "Keep blank lines around headings, code fences and other semantic blocks.",
             "Keep only the blank lines Markdown needs to parse the same way."
           ],
-          "default": "readable",
-          "description": "Blank line policy in compact mode."
+          "default": "minimal",
+          "description": "Blank line policy in compact mode. `minimal` (default) keeps only blank lines that already exist in the source and are needed to parse the same way; it never adds lines."
         },
         "mdPromptPack.minifyJsonFences": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "Minify ` ```json ` code fences that contain valid JSON by removing whitespace outside strings. Numbers, strings and key order are kept exactly. Invalid JSON (comments, `{placeholders}`, trailing commas), unclosed fences and fences inside protected blocks such as `<output_template>` are left untouched."
+        },
+        "mdPromptPack.joinWrappedLines": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Join hard-wrapped paragraph lines into one line. Only joins when the first line has at least 40 characters and does not end with `.` `!` `?` `:` `;`, so prompts with one instruction per line keep their line structure. Lists, tables, headings, quotes, HTML and code are never joined."
         },
         "mdPromptPack.showTokenStats": {
           "type": "boolean",
