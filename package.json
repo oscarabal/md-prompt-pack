@@ -6,6 +6,10 @@
   "publisher": "oscarabal",
   "icon": "assets/icon.png",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oscarabal/md-prompt-pack.git"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -170,7 +174,7 @@
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
-    "@vscode/vsce": "^2.15.0",
+    "@vscode/vsce": "^4.1.1",
     "typescript": "^5.4.0"
   }
 }
